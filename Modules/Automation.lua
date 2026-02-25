@@ -1,15 +1,21 @@
 return function(Window)
+    -- 1. Buat Tab Utama
     local OtomatisTab = Window:AddMainTab("Automation")
-    
-    -- Buat SubTab-nya di sini
+
+    -- 2. Buat SubTab (Rumah untuk fiturnya)
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
 
-    -- Gunakan link RAW GitHub kamu nanti
-    local baseUrl = "https://raw.githubusercontent.com/Username/Repo/main/"
+    -- 3. Path Folder Fitur
+    local featurePath = "Automation/"
 
-    -- Manggil fitur dengan nama yang kamu mau
-    -- Kita panggil Collect dulu supaya fungsi GPS-nya siap dipakai
-    loadstring(game:HttpGet(baseUrl .. "AutoCollect.lua"))()(CollectSub)
-    loadstring(game:HttpGet(baseUrl .. "AutoPnB.lua"))()(PnBSub)
+    -- 4. Panggil Fitur Auto PnB
+    -- Kita kirim 'PnBSub' agar UI PnB nempel di SubTab ini
+    local pnbSource = game:HttpGet(getgenv().GetRaw(featurePath .. "AutoPnB.lua"))
+    loadstring(pnbSource)()(PnBSub)
+
+    -- 5. Panggil Fitur Auto Collect
+    -- Kita kirim 'CollectSub' agar UI Collect nempel di SubTab ini
+    local collectSource = game:HttpGet(getgenv().GetRaw(featurePath .. "AutoCollect.lua"))
+    loadstring(collectSource)()(CollectSub)
 end
