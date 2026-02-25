@@ -1,7 +1,7 @@
 -- [[ CONFIGURATION ]] --
 getgenv().SayzConfig = {
-    UserName = "UsernameKamu", -- GANTI INI
-    Repo = "SayzUI_Project",   -- GANTI INI
+    UserName = "SuryaYoga", -- GANTI INI
+    Repo = "SayzHub",   -- GANTI INI
     Branch = "main"
 }
 
@@ -45,5 +45,6 @@ getgenv().CheatSettings = {
 loadstring(game:HttpGet(GetRaw("Modules/Beranda.lua")))()(Window)
 loadstring(game:HttpGet(GetRaw("Modules/Automation.lua")))()(Window)
 loadstring(game:HttpGet(GetRaw("Modules/Miscs.lua")))()(Window)
+
 
 Window:Notify("SayzUI Modular Berhasil Dimuat!", 3, "ok")
