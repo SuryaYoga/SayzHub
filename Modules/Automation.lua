@@ -4,49 +4,45 @@ return function(Window)
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
 
-    -- Sesuaikan dengan nama folder di GitHub kamu (Case Sensitive)
-    local featurePath = "Automation/" 
+    -- [[ 2. KONFIGURASI INTERNAL ]] --
+    -- Sesuaikan Username dan Repo kamu di sini agar 100% akurat
+    local user = "SuryaYoga"
+    local repo = "SayzHub"
+    local branch = "main"
+    local folder = "Automation/"
 
-    -- [[ 2. FUNGSI PEMANGGIL PINTAR ]] --
-    local function SafeLoad(path, subTabObj)
-        local url = getgenv().GetRaw(path)
+    -- Fungsi lokal untuk merakit URL Raw GitHub
+    local function getLocalRaw(fileName)
+        return string.format("https://raw.githubusercontent.com/%s/%s/refs/heads/%s/%s", user, repo, branch, fileName)
+    end
+
+    -- [[ 3. FUNGSI PEMANGGIL AMAN ]] --
+    local function SafeLoad(fileName, subTabObj)
+        local url = getLocalRaw(fileName)
         
-        -- Ambil kode dari GitHub
         local success, code = pcall(game.HttpGet, game, url)
         
         if success and code and #code > 0 then
-            -- Compile kode menjadi fungsi
             local func, err = loadstring(code)
-            
             if func then
-                -- Jalankan fungsi dan kirimkan SubTab serta Window utama
+                -- Jalankan fungsi kodenya
                 local runSuccess, result = pcall(func)
                 
-                if runSuccess then
-                    if type(result) == "function" then
-                        -- Jika file pakai 'return function(SubTab, Window)'
-                        result(subTabObj, Window)
-                    else
-                        -- Jika file isinya kode langsung (tanpa return function)
-                        -- Kita bungkus supaya dia tetap kenal variabel 'SubTab' dan 'Window'
-                        local wrapper = loadstring("local SubTab, Window = ...; " .. code)
-                        if wrapper then
-                            pcall(wrapper, subTabObj, Window)
-                        end
-                    end
-                else
-                    warn("❌ Runtime Error di " .. path .. ": " .. tostring(result))
+                if runSuccess and type(result) == "function" then
+                    -- Oper SubTab dan Window ke file fitur
+                    result(subTabObj, Window)
+                elseif not runSuccess then
+                    warn("❌ Runtime Error di " .. fileName .. ": " .. tostring(result))
                 end
             else
-                warn("❌ Syntax Error di " .. path .. ": " .. tostring(err))
+                warn("❌ Syntax Error di " .. fileName .. ": " .. tostring(err))
             end
         else
-            warn("❌ HTTP Error: File tidak ditemukan di " .. url)
+            warn("❌ HTTP 404: File tidak ditemukan di URL: " .. url)
         end
     end
 
-    -- [[ 3. EKSEKUSI ]] --
-    -- Panggil file PnB dan Collect
-    SafeLoad(featurePath .. "AutoPnB.lua", PnBSub)
-    SafeLoad(featurePath .. "AutoCollect.lua", CollectSub)
+    -- [[ 4. EKSEKUSI ]] --
+    SafeLoad("AutoPnB.lua", PnBSub)
+    SafeLoad("AutoCollect.lua", CollectSub)
 end
