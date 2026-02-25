@@ -6,35 +6,36 @@ return function(Window)
     local featurePath = "Automation/" 
 
     local function SafeLoad(path, tabObj)
-        -- Ambil URL Raw
         local url = getgenv().GetRaw(path)
-        
-        -- Cek apakah file ada
         local success, code = pcall(game.HttpGet, game, url)
         
-        if success and code and #code > 0 then
-            -- Coba compile kodenya
+        if success and code then
             local func, err = loadstring(code)
-            
             if func then
-                -- Jalankan fungsi kodenya
-                local runSuccess, runErr = pcall(function()
-                    func()(tabObj)
-                end)
+                -- Coba panggil sebagai fungsi pembungkus dulu
+                local runSuccess, result = pcall(func)
                 
-                if not runSuccess then
-                    warn("❌ Error saat menjalankan isi file: " .. path .. " | Error: " .. tostring(runErr))
+                if runSuccess then
+                    if type(result) == "function" then
+                        -- Jika file mengembalikan fungsi (return function(SubTab))
+                        result(tabObj)
+                    else
+                        -- Jika file berisi kode langsung (Tanpa return function)
+                        -- Kita perlu menjalankan ulang dengan variabel 'SubTab' yang terdefinisi
+                        local directFunc = loadstring("local SubTab = ...; " .. code)
+                        directFunc(tabObj)
+                    end
+                else
+                    warn("❌ Error saat menjalankan " .. path .. ": " .. tostring(result))
                 end
             else
-                warn("❌ Gagal Compile (Syntax Error) di file: " .. path .. " | Error: " .. tostring(err))
-                print("Isi kode yang terbaca: " .. string.sub(code, 1, 100) .. "...")
+                warn("❌ Syntax Error di " .. path .. ": " .. tostring(err))
             end
         else
-            warn("❌ HTTP Error: File tidak ditemukan atau kosong di: " .. url)
+            warn("❌ Gagal download file: " .. url)
         end
     end
 
-    -- Eksekusi dengan proteksi
     SafeLoad(featurePath .. "AutoPnB.lua", PnBSub)
     SafeLoad(featurePath .. "AutoCollect.lua", CollectSub)
 end
