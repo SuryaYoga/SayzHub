@@ -1,21 +1,27 @@
 return function(Window)
-    -- 1. Buat Tab Utama
     local OtomatisTab = Window:AddMainTab("Automation")
-
-    -- 2. Buat SubTab (Rumah untuk fiturnya)
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
 
-    -- 3. Path Folder Fitur
-    local featurePath = "Automation/"
+    local featurePath = "Automation/" 
 
-    -- 4. Panggil Fitur Auto PnB
-    -- Kita kirim 'PnBSub' agar UI PnB nempel di SubTab ini
-    local pnbSource = game:HttpGet(getgenv().GetRaw(featurePath .. "AutoPnB.lua"))
-    loadstring(pnbSource)()(PnBSub)
+    -- Fungsi buat panggil file dengan proteksi agar tidak 'nil'
+    local function SafeLoad(path, tabObj)
+        local success, code = pcall(game.HttpGet, game, getgenv().GetRaw(path))
+        if success and code then
+            local func, err = loadstring(code)
+            if func then
+                -- Menjalankan isi file dan mengirimkan SubTab-nya
+                func()(tabObj) 
+            else
+                warn("Gagal loadstring file: " .. path .. " | Error: " .. tostring(err))
+            end
+        else
+            warn("File tidak ditemukan di GitHub: " .. path)
+        end
+    end
 
-    -- 5. Panggil Fitur Auto Collect
-    -- Kita kirim 'CollectSub' agar UI Collect nempel di SubTab ini
-    local collectSource = game:HttpGet(getgenv().GetRaw(featurePath .. "AutoCollect.lua"))
-    loadstring(collectSource)()(CollectSub)
+    -- Eksekusi
+    SafeLoad(featurePath .. "AutoPnB.lua", PnBSub)
+    SafeLoad(featurePath .. "AutoCollect.lua", CollectSub)
 end
