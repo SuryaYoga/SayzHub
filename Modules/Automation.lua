@@ -5,23 +5,36 @@ return function(Window)
 
     local featurePath = "Automation/" 
 
-    -- Fungsi buat panggil file dengan proteksi agar tidak 'nil'
     local function SafeLoad(path, tabObj)
-        local success, code = pcall(game.HttpGet, game, getgenv().GetRaw(path))
-        if success and code then
+        -- Ambil URL Raw
+        local url = getgenv().GetRaw(path)
+        
+        -- Cek apakah file ada
+        local success, code = pcall(game.HttpGet, game, url)
+        
+        if success and code and #code > 0 then
+            -- Coba compile kodenya
             local func, err = loadstring(code)
+            
             if func then
-                -- Menjalankan isi file dan mengirimkan SubTab-nya
-                func()(tabObj) 
+                -- Jalankan fungsi kodenya
+                local runSuccess, runErr = pcall(function()
+                    func()(tabObj)
+                end)
+                
+                if not runSuccess then
+                    warn("❌ Error saat menjalankan isi file: " .. path .. " | Error: " .. tostring(runErr))
+                end
             else
-                warn("Gagal loadstring file: " .. path .. " | Error: " .. tostring(err))
+                warn("❌ Gagal Compile (Syntax Error) di file: " .. path .. " | Error: " .. tostring(err))
+                print("Isi kode yang terbaca: " .. string.sub(code, 1, 100) .. "...")
             end
         else
-            warn("File tidak ditemukan di GitHub: " .. path)
+            warn("❌ HTTP Error: File tidak ditemukan atau kosong di: " .. url)
         end
     end
 
-    -- Eksekusi
+    -- Eksekusi dengan proteksi
     SafeLoad(featurePath .. "AutoPnB.lua", PnBSub)
     SafeLoad(featurePath .. "AutoCollect.lua", CollectSub)
 end
