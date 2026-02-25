@@ -1,4 +1,4 @@
-return function(SubTab)
+return function(SubTab, Window)
     -- ========================================
     -- [1] VARIABEL & SETUP
     -- ========================================
@@ -230,4 +230,5 @@ return function(SubTab)
             task.wait(0.01)
         end
     end)
+
 end
