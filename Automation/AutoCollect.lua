@@ -1,4 +1,4 @@
-return function(SubTab)
+return function(SubTab, Window)
     -- [[ 1. SETUP & VARIABLES ]] --
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
@@ -176,4 +176,5 @@ return function(SubTab)
             task.wait(0.2)
         end
     end)
+
 end
