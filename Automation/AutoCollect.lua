@@ -56,11 +56,33 @@ return function(SubTab, Window)
         getgenv().StepDelay = tonumber(v) or 0.05
     end)
 
-    -- ITEM FILTER (SEKARANG DI ATAS)
+    -- ITEM FILTER
     SubTab:AddSection("ITEM FILTER")
+    
+    local FilterLabel = SubTab:AddLabel("🚫 Blacklist: None") -- Label yang kamu minta
+
     local MultiDrop
-    MultiDrop = sub:AddMultiDropdown("Blacklist Items", {}, function(selected)
+    MultiDrop = SubTab:AddMultiDropdown("Blacklist Items", {}, function(selected)
         getgenv().ItemBlacklist = selected
+        
+        -- Logic untuk memperbarui teks label dengan nama item
+        local names = {}
+        for name, _ in pairs(selected) do
+            table.insert(names, name)
+        end
+        
+        if #names == 0 then
+            FilterLabel:SetText("🚫 Blacklist: None")
+        else
+            -- Menampilkan maksimal 3 nama agar tidak kepanjangan
+            local displayLimit = 3
+            local text = table.concat(names, ", ", 1, math.min(#names, displayLimit))
+            if #names > displayLimit then
+                text = text .. " (+" .. (#names - displayLimit) .. " lainnya)"
+            end
+            FilterLabel:SetText("🚫 Blacklist: " .. text)
+        end
+        
         UpdateBlacklistCache()
     end)
 
@@ -96,3 +118,4 @@ return function(SubTab, Window)
     -- [[ CORE LOGIC & MAIN LOOP - TETAP UTUH ]] --
     -- (Bagian findSmartPath, Gravity Bypass, dan Loop tetap sama seperti sebelumnya)
     -- ... (Saya asumsikan kamu menempelkan logic loop dari script "gemuk" sebelumnya)
+
