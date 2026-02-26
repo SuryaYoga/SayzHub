@@ -29,12 +29,87 @@ return function(SubTab, Window)
         end
     end
 
+    -- Fungsi Pengecekan Item Blacklist di Koordinat (Favoritmu)
+    local function getBlacklistItemAt(gx, gy)
+        for _, folder in pairs({"Drops", "Gems"}) do
+            local container = workspace:FindFirstChild(folder)
+            if container then
+                for _, item in pairs(container:GetChildren()) do
+                    local itX, itY = math.floor(item:GetPivot().Position.X/4.5+0.5), math.floor(item:GetPivot().Position.Y/4.5+0.5)
+                    if itX == gx and itY == gy then
+                        local id = item:GetAttribute("id") or item.Name
+                        if getgenv().ItemBlacklist[id] then
+                            return true 
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    local function isWalkable(gx, gy, currentY)
+        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false, false end
+        if lockedDoors[gx .. "," .. gy] then return false, false end 
+
+        if WorldTiles[gx] and WorldTiles[gx][gy] then
+            local l1 = WorldTiles[gx][gy][1]
+            local itemName = (type(l1) == "table") and l1[1] or l1
+            if itemName then
+                local n = string.lower(tostring(itemName))
+                if string.find(n, "door") or string.find(n, "frame") then 
+                    return true, getBlacklistItemAt(gx, gy) 
+                end
+                return false, false 
+            end
+        end
+        return true, getBlacklistItemAt(gx, gy)
+    end
+
+    -- Pathfinding Pintar (Dijkstra-lite)
+    local function findSmartPath(startX, startY, targetX, targetY)
+        local queue = {{x = startX, y = startY, path = {}, cost = 0}}
+        local visited = {[startX .. "," .. startY] = 0}
+        local directions = {{x=1, y=0}, {x=-1, y=0}, {x=0, y=1}, {x=0, y=-1}}
+        
+        local limit = 0
+        while #queue > 0 do
+            limit = limit + 1
+            if limit > 5000 then break end 
+            
+            table.sort(queue, function(a, b) return a.cost < b.cost end)
+            local current = table.remove(queue, 1)
+
+            if current.x == targetX and current.y == targetY then
+                return current.path 
+            end
+
+            for _, d in ipairs(directions) do
+                local nx, ny = current.x + d.x, current.y + d.y
+                local walkable, isBlacklisted = isWalkable(nx, ny, current.y)
+                
+                if walkable then
+                    local moveCost = isBlacklisted and 100 or 1
+                    local newTotalCost = current.cost + moveCost
+                    
+                    local posKey = nx .. "," .. ny
+                    if not visited[posKey] or newTotalCost < visited[posKey] then
+                        visited[posKey] = newTotalCost
+                        local newPath = {unpack(current.path)}
+                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
+                        table.insert(queue, {x = nx, y = ny, path = newPath, cost = newTotalCost})
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     local function GetNearestItem()
         local target, dist = nil, 500
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
 
-        -- Cek folder sesuai setting TakeGems
         local folders = {"Drops"}
         if getgenv().TakeGems then table.insert(folders, "Gems") end
 
@@ -43,7 +118,6 @@ return function(SubTab, Window)
             if container then
                 for _, item in pairs(container:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
-                    -- Filter Blacklist dimasukkan di sini
                     if not getgenv().ItemBlacklist[id] and not badItems[item] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then dist = d; target = item end
@@ -52,49 +126,6 @@ return function(SubTab, Window)
             end
         end
         return target
-    end
-
-    local function isWalkable(gx, gy, currentY)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
-        if lockedDoors[gx .. "," .. gy] then return false end 
-
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                if string.find(n, "door") then return true end
-                if string.find(n, "frame") then
-                    if currentY and gy > currentY then return true end
-                    return true 
-                end
-                return false 
-            end
-        end
-        return true 
-    end
-
-    local function findSmartPath(startX, startY, targetX, targetY)
-        local queue = {{x = startX, y = startY, path = {}}}
-        local visited = {[startX .. "," .. startY] = true}
-        local directions = {{x=1, y=0}, {x=-1, y=0}, {x=0, y=1}, {x=0, y=-1}}
-        local limit = 0
-        while #queue > 0 do
-            limit = limit + 1
-            if limit > 4000 then return nil end 
-            local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then return current.path end
-            for _, d in ipairs(directions) do
-                local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkable(nx, ny, current.y) and not visited[nx .. "," .. ny] then
-                    visited[nx .. "," .. ny] = true
-                    local newPath = {unpack(current.path)}
-                    table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                    table.insert(queue, {x = nx, y = ny, path = newPath})
-                end
-            end
-        end
-        return nil
     end
 
     local function scanAndLockNearbyDoor(gx, gy)
@@ -107,19 +138,17 @@ return function(SubTab, Window)
         end
     end
 
-    -- [[ 3. UI ELEMENTS ]] --
+    -- [[ 3. UI SECTION ]] --
     SubTab:AddSection("CONTROL PANEL")
     SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
     SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(s) getgenv().TakeGems = s end)
-    
-    SubTab:AddInput("Step Speed Delay", tostring(getgenv().StepDelay), function(val)
-        getgenv().StepDelay = tonumber(val) or 0.05
+    SubTab:AddInput("Step Delay", tostring(getgenv().StepDelay), function(v)
+        getgenv().StepDelay = tonumber(v) or 0.05
     end)
 
-    -- BAGIAN FILTER (Sesuai request: Nama Item muncul di Label)
     SubTab:AddSection("ITEM FILTER")
     local FilterLabel = SubTab:AddLabel("🚫 Blacklist: None")
 
@@ -132,16 +161,16 @@ return function(SubTab, Window)
         if #names == 0 then
             FilterLabel:SetText("🚫 Blacklist: None")
         else
-            local show = table.concat(names, ", ", 1, math.min(#names, 3))
-            if #names > 3 then show = show .. " (+" .. (#names-3) .. ")" end
-            FilterLabel:SetText("🚫 Blacklist: " .. show)
+            local text = table.concat(names, ", ", 1, math.min(#names, 3))
+            if #names > 3 then text = text .. " (+" .. (#names-3) .. ")" end
+            FilterLabel:SetText("🚫 Blacklist: " .. text)
         end
     end)
 
     SubTab:AddButton("Scan World Items", function()
         local items = {}
-        for _, folder in pairs({"Drops", "Gems"}) do
-            local c = workspace:FindFirstChild(folder)
+        for _, f in pairs({"Drops", "Gems"}) do
+            local c = workspace:FindFirstChild(f)
             if c then for _, item in pairs(c:GetChildren()) do
                 local id = item:GetAttribute("id") or item.Name
                 if not table.find(items, id) then table.insert(items, id) end
@@ -175,18 +204,18 @@ return function(SubTab, Window)
         end
     end)
 
-    -- [[ 5. MAIN LOOP (PERSIS KODE AMAN KAMU) ]] --
+    -- [[ 5. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
         while true do
-            local success, err = pcall(function()
+            pcall(function()
                 if getgenv().AutoCollect then
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     local target = GetNearestItem()
                     
                     if Hitbox and target then
                         TargetLabel:SetText("Target: " .. (target:GetAttribute("id") or target.Name))
-                        StatusLabel:SetText("Status: Pathfinding...")
+                        StatusLabel:SetText("Status: Moving...")
                         
                         local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
@@ -195,12 +224,15 @@ return function(SubTab, Window)
                         if path then
                             for _, point in ipairs(path) do
                                 if not getgenv().AutoCollect then break end
+                                -- Gerakan Karakter
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
+                                
+                                -- JEDA UTAMA: Jika masih "kecepetan", naikkan StepDelay di UI (misal 0.07)
                                 task.wait(getgenv().StepDelay)
 
-                                -- Deteksi Stuck
-                                local charPos = LP.Character and LP.Character.HumanoidRootPart.Position
+                                -- Deteksi Stuck Pintu
+                                local charPos = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") and LP.Character.HumanoidRootPart.Position
                                 if charPos and (Vector2.new(charPos.X, charPos.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
                                     scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
                                     break 
@@ -217,7 +249,8 @@ return function(SubTab, Window)
                     StatusLabel:SetText("Status: Paused")
                 end
             end)
-            task.wait(0.2) -- Jeda Main Loop tetap 0.2 sesuai kode aman kamu
+            -- Jeda antar pencarian item baru (Sangat penting buat kestabilan)
+            task.wait(0.2) 
         end
     end)
 end
