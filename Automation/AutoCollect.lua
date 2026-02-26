@@ -3,10 +3,13 @@ return function(SubTab, Window)
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
+    local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
     -- Ambil setting dari Global atau set default
     getgenv().AutoCollect = getgenv().AutoCollect or false
     getgenv().StepDelay = getgenv().StepDelay or 0.05 
+    getgenv().IgnoreGems = getgenv().IgnoreGems or false
+    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {}
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
     local doorDatabase = {} 
@@ -33,11 +36,17 @@ return function(SubTab, Window)
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
 
-        for _, folder in pairs({"Drops", "Gems"}) do
-            local container = workspace:FindFirstChild(folder)
+        -- Folder yang akan dicek
+        local folders = {"Drops"}
+        if not getgenv().IgnoreGems then table.insert(folders, "Gems") end
+
+        for _, folderName in pairs(folders) do
+            local container = workspace:FindFirstChild(folderName)
             if container then
                 for _, item in pairs(container:GetChildren()) do
-                    if not badItems[item] then
+                    -- CEK FILTER (Blacklist & BadItems)
+                    local itemId = item:GetAttribute("id") or item.Name
+                    if not badItems[item] and not getgenv().ItemBlacklist[itemId] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then dist = d; target = item end
                     end
@@ -47,20 +56,49 @@ return function(SubTab, Window)
         return target
     end
 
+    -- [[ 3. NEW FEATURE FUNCTIONS ]] --
+
+    local function ScanWorldDrops()
+        local summary = {}
+        local totalAll = 0
+        local GEMS_VALUE_MAP = { [0] = 1, [1] = 5, [2] = 10, [3] = 50, [4] = 100 }
+        local folders = { ["Drops"] = false, ["Gems"] = true }
+
+        for folderName, isGemsFolder in pairs(folders) do
+            local container = workspace:FindFirstChild(folderName)
+            if container then
+                for _, item in pairs(container:GetChildren()) do
+                    local id = item:GetAttribute("id") or item.Name
+                    local nValue = item:GetAttribute("n") or 0
+                    local amount = 0
+
+                    if isGemsFolder then
+                        id = "Gems"
+                        amount = GEMS_VALUE_MAP[nValue] or 1
+                    else
+                        id = id or "Unknown"
+                        amount = item:GetAttribute("amount") or 1
+                    end
+
+                    summary[id] = (summary[id] or 0) + amount
+                    totalAll = totalAll + amount
+                end
+            end
+        end
+        return summary, totalAll
+    end
+
+    -- Logika Navigasi (tetap sama)
     local function isWalkable(gx, gy, currentY)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
         if lockedDoors[gx .. "," .. gy] then return false end 
-
         if WorldTiles[gx] and WorldTiles[gx][gy] then
             local l1 = WorldTiles[gx][gy][1]
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
                 if string.find(n, "door") then return true end
-                if string.find(n, "frame") then
-                    if currentY and gy > currentY then return true end
-                    return true 
-                end
+                if string.find(n, "frame") then return (not currentY or gy >= currentY) end
                 return false 
             end
         end
@@ -95,34 +133,75 @@ return function(SubTab, Window)
         for dx = -radius, radius do
             for dy = -radius, radius do
                 local key = (gx + dx) .. "," .. (gy + dy)
-                if doorDatabase[key] then
-                    lockedDoors[key] = true
-                end
+                if doorDatabase[key] then lockedDoors[key] = true end
             end
         end
     end
 
-    -- [[ 3. UI ELEMENTS ]] --
+    -- [[ 4. UI ELEMENTS ]] --
     SubTab:AddSection("Collect Master")
     SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
-
-    SubTab:AddSection("Settings")
-    SubTab:AddSlider("Step Speed", 0.01, 0.2, 0.05, function(val)
-        getgenv().StepDelay = val
+    
+    SubTab:AddToggle("Ignore All Gems", getgenv().IgnoreGems, function(state)
+        getgenv().IgnoreGems = state
     end)
 
-    SubTab:AddButton("Reset Blacklist (Bad Items)", function()
+    SubTab:AddSection("Settings & Scanners")
+    SubTab:AddSlider("Step Speed", 0.01, 0.2, 0.05, function(val) getgenv().StepDelay = val end)
+    
+    SubTab:AddButton("Scan World Drops (F9)", function()
+        local result, total = ScanWorldDrops()
+        print("--- [WORLD SCAN] ---")
+        for id, count in pairs(result) do
+            local name = (id == "Gems") and "Gems" or IM.GetName(id)
+            print("- " .. name .. " (" .. tostring(id) .. "): " .. count)
+        end
+        print("Total Wealth: " .. total)
+        Window:Notify("Check F9 Console for results!", 3, "ok")
+    end)
+
+    SubTab:AddSection("Filter Management")
+    
+    -- Dropdown dari Database
+    local allItemNames = {}
+    local nameToId = {}
+    for id, data in pairs(IM.ItemsData) do
+        local n = data.Name or tostring(id)
+        table.insert(allItemNames, n)
+        nameToId[n] = id
+    end
+    table.sort(allItemNames)
+
+    SubTab:AddDropdown("Add to Blacklist", allItemNames, function(selected)
+        local id = nameToId[selected]
+        getgenv().ItemBlacklist[id] = true
+        Window:Notify("Blacklisted: " .. selected, 2, "ok")
+    end)
+
+    SubTab:AddButton("Edit / Clear Blacklist", function()
+        local listText = ""
+        for id, _ in pairs(getgenv().ItemBlacklist) do listText = listText .. id .. "," end
+        Window:PromptInput("Edit Blacklist (IDs separated by comma)", listText, function(val)
+            local newTbl = {}
+            for id in string.gmatch(val, '([^, ]+)') do newTbl[id] = true end
+            getgenv().ItemBlacklist = newTbl
+            Window:Notify("Blacklist Updated!", 2, "ok")
+        end)
+    end)
+
+    SubTab:AddButton("Reset All (Including Bad Items)", function()
         badItems = {}
         lockedDoors = {}
-        Window:Notify("Blacklist cleared!", 2, "ok")
+        getgenv().ItemBlacklist = {}
+        Window:Notify("All filters reset!", 2, "ok")
     end)
 
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
-    -- [[ 4. GRAVITY BYPASS ]] --
+    -- [[ 5. GRAVITY BYPASS ]] --
     task.spawn(function()
         while task.wait() do
             if getgenv().AutoCollect then
@@ -134,7 +213,7 @@ return function(SubTab, Window)
         end
     end)
 
-    -- [[ 5. MAIN LOOP ]] --
+    -- [[ 6. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
         while true do
@@ -144,7 +223,7 @@ return function(SubTab, Window)
                     local target = GetNearestItem()
                     
                     if Hitbox and target then
-                        StatusLabel:SetText("Status: Pathfinding to item...")
+                        StatusLabel:SetText("Status: Pathfinding to " .. target.Name)
                         local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
 
@@ -156,7 +235,6 @@ return function(SubTab, Window)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(getgenv().StepDelay)
 
-                                -- Deteksi Stuck (Pintu)
                                 local charPos = LP.Character and LP.Character.HumanoidRootPart.Position
                                 if charPos and (Vector2.new(charPos.X, charPos.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
                                     scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
@@ -167,7 +245,7 @@ return function(SubTab, Window)
                             badItems[target] = true
                         end
                     else
-                        StatusLabel:SetText("Status: Scanning for items...")
+                        StatusLabel:SetText("Status: Scanning...")
                     end
                 else
                     StatusLabel:SetText("Status: Paused")
@@ -176,5 +254,4 @@ return function(SubTab, Window)
             task.wait(0.2)
         end
     end)
-
 end
