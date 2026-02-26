@@ -200,7 +200,7 @@ return function(SubTab, Window)
         end
     end)
 
-    -- [[ 5. MAIN LOOP ]] --
+   -- [[ 5. MAIN LOOP - OPTIMIZED & MERGED ]] --
     InitDoorDatabase()
     task.spawn(function()
         while true do
@@ -213,28 +213,27 @@ return function(SubTab, Window)
                         local targetName = IM.GetName(target:GetAttribute("id") or target.Name) or "Item"
                         local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
-
+    
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
-                            -- Cek Keamanan Jalur
-                            local terpaksa = false
-                            for _, p in ipairs(path) do
-                                if getBlacklistItemAt(math.floor(p.X/4.5+0.5), math.floor(p.Y/4.5+0.5)) then
-                                    terpaksa = true; break
-                                end
-                            end
-                            StatusLabel:SetText("Status: " .. (terpaksa and "Forced Path" or "Safe Path") .. " -> " .. targetName)
-
+                            -- GABUNGAN: Jalan sambil update status
                             for _, point in ipairs(path) do
                                 if not getgenv().AutoCollect then break end
+    
+                                -- Update Label Status (Cek apakah titik ini blacklist)
+                                local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
+                                local isTerpaksa = getBlacklistItemAt(px, py)
+                                StatusLabel:SetText("Status: " .. (isTerpaksa and "⚠️ Forced" or "✅ Safe") .. " -> " .. targetName)
+    
+                                -- Gerakkan Karakter
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(getgenv().StepDelay)
-
+    
                                 -- Deteksi Stuck
                                 local charPos = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") and LP.Character.HumanoidRootPart.Position
                                 if charPos and (Vector2.new(charPos.X, charPos.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
-                                    scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
+                                    scanAndLockNearbyDoor(px, py)
                                     break 
                                 end
                             end
@@ -252,3 +251,4 @@ return function(SubTab, Window)
         end
     end)
 end
+
