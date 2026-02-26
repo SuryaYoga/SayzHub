@@ -188,7 +188,7 @@ return function(SubTab, Window)
     SubTab:AddSection("Filter Management")
     
     -- Label Daftar Blacklist Aktif
-    local FilterLabel = SubTab:AddLabel("Active Blacklist: None")
+    local _, FilterLabel = SubTab:AddLabel("Active Blacklist: None")
 
     local MultiDrop
     MultiDrop = SubTab:AddMultiDropdown("Filter Items", currentPool, function(selected)
@@ -220,15 +220,15 @@ return function(SubTab, Window)
         lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
         -- Fix: Benar-benar mereset pilihan di UI Dropdown
-        if MultiDrop and MultiDrop.Set then 
-            MultiDrop:Set({}) 
+        if MultiDrop and MultiDrop.ClearAll then
+            MultiDrop:ClearAll()
         end
         Window:Notify("All settings cleared!", 2)
     end)
 
     SubTab:AddSection("Status Dashboard")
-    local StatusLabel = SubTab:AddLabel("Status: Idle")
-    local TargetLabel = SubTab:AddLabel("Target: None")
+    local _, StatusLabel  = SubTab:AddLabel("Status: Idle")
+    local _, TargetLabel  = SubTab:AddLabel("Target: None")
 
     -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
@@ -294,3 +294,4 @@ return function(SubTab, Window)
         end
     end)
 end
+
