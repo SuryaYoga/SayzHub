@@ -3,7 +3,7 @@
 --// Added: Loading overlay, Minimize, Close confirm, Toggle Keybind
 --// Added UI Controls: Label, Section, Button, Toggle, Slider, Input, Dropdown, Paragraph
 --// Added Toast Notify (small popup)
---// Added: Get/Set handles for Toggle/Slider/Input/Dropdown (+ label handle SetText)
+--// Added: Get/Set handles for Toggle/Slider/Input/Dropdown
 --// Added: K ignores when typing (focused TextBox)
 --// Added: Mini opener drag + snap
 --// No external libraries.
@@ -81,7 +81,7 @@ local function safeCall(cb, ...)
 	end
 end
 
--- ===== Theme Presets =====
+-- ===== Theme Presets (stored in library) =====
 local Themes = {}
 
 Themes.DefaultDark = {
@@ -176,7 +176,7 @@ function SayzUI:CreateWindow(opts)
 		keybind = Enum.KeyCode.K
 	end
 
-	-- Theme selection
+	-- Theme selection from main script
 	if opts.Theme then
 		if type(opts.Theme) == "string" and Themes[opts.Theme] then
 			Theme = Themes[opts.Theme]
@@ -700,6 +700,7 @@ function SayzUI:CreateWindow(opts)
 		if Window._loading then
 			Window._loading.Visible = false
 		end
+		-- Only show main if not minimized
 		if not Window._minimized then
 			if Window._main then Window._main.Visible = true end
 			if Window._mini then Window._mini.Visible = false end
@@ -832,13 +833,13 @@ function SayzUI:CreateWindow(opts)
 	-- ===== Toggle keybind (K) - ignore when typing in TextBox =====
 	janitor:Add(UIS.InputBegan:Connect(function(input, gpe)
 		if gpe then return end
-		if UIS:GetFocusedTextBox() then return end
+		if UIS:GetFocusedTextBox() then return end -- IMPORTANT: ignore typing
 		if input.KeyCode == keybind then
 			Window:Toggle()
 		end
 	end))
 
-	-- Dragging on topbar
+	-- Dragging on topbar (window draggable)
 	do
 		local dragging = false
 		local dragStart, startPos
@@ -966,81 +967,63 @@ function SayzUI:CreateWindow(opts)
 				for _, item in ipairs(sub._items) do item() end
 			end
 
-			-- ===== Controls =====
-
-			-- Toggle (handle Get/Set)
 			function sub:AddToggle(text, defaultValue, callback)
-				local handle = { Value = defaultValue and true or false, _apply = nil, Sub = sub }
+                table.insert(sub._items, function()
+                    local card = rowCard()
 
-				function handle:Get()
-					return self.Value
-				end
-				function handle:Set(v, silent)
-					v = v and true or false
-					self.Value = v
-					if self._apply then
-						self._apply(v, not silent)
-					elseif (not silent) then
-						safeCall(callback, v)
-					end
-				end
+                    local lbl = mk("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, -60, 1, 0),
+                        Font = Enum.Font.GothamSemibold,
+                        TextSize = 13,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextColor3 = Theme.Text,
+                        Text = tostring(text),
+                        Parent = card
+                    })
 
-				table.insert(sub._items, function()
-					local card = rowCard()
+                    local state = defaultValue and true or false
 
-					mk("TextLabel", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(1, -60, 1, 0),
-						Font = Enum.Font.GothamSemibold,
-						TextSize = 13,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						TextColor3 = Theme.Text,
-						Text = tostring(text),
-						Parent = card
-					})
+                    local tbtn = mk("TextButton", {
+                        AnchorPoint = Vector2.new(1, 0.5),
+                        Position = UDim2.new(1, 0, 0.5, 0),
+                        Size = UDim2.new(0, 46, 0, 26),
+                        BackgroundColor3 = state and Theme.Accent or Theme.Button,
+                        BorderSizePixel = 0,
+                        Text = "",
+                        AutoButtonColor = false,
+                        Parent = card
+                    })
+                    corner(tbtn, 13)
 
-					local tbtn = mk("TextButton", {
-						AnchorPoint = Vector2.new(1, 0.5),
-						Position = UDim2.new(1, 0, 0.5, 0),
-						Size = UDim2.new(0, 46, 0, 26),
-						BackgroundColor3 = Theme.Button,
-						BorderSizePixel = 0,
-						Text = "",
-						AutoButtonColor = false,
-						Parent = card
-					})
-					corner(tbtn, 13)
+                    local knob = mk("Frame", {
+                        Size = UDim2.new(0, 20, 0, 20),
+                        Position = state and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10),
+                        BackgroundColor3 = Theme.Panel,
+                        BorderSizePixel = 0,
+                        Parent = tbtn
+                    })
+                    corner(knob, 10)
+                    stroke(knob, 1, 0.8, Theme.Stroke)
 
-					local knob = mk("Frame", {
-						Size = UDim2.new(0, 20, 0, 20),
-						Position = UDim2.new(0, 3, 0.5, -10),
-						BackgroundColor3 = Theme.Panel,
-						BorderSizePixel = 0,
-						Parent = tbtn
-					})
-					corner(knob, 10)
-					stroke(knob, 1, 0.8, Theme.Stroke)
+                    local function set(v)
+                        state = v and true or false
+                        tbtn.BackgroundColor3 = state and Theme.Accent or Theme.Button
+                        knob.Position = state and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+                        if callback then callback(state) end
+                    end
 
-					local function apply(v, fireCb)
-						handle.Value = v
-						tbtn.BackgroundColor3 = v and Theme.Accent or Theme.Button
-						knob.Position = v and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
-						if fireCb then
-							safeCall(callback, v)
-						end
-					end
+                    janitor:Add(tbtn.MouseButton1Click:Connect(function()
+                        set(not state)
+                    end))
 
-					handle._apply = apply
-					apply(handle.Value, false)
+                    -- return handle (for future use)
+                    card:SetAttribute("SayzToggle", true)
+                end)
+                return sub
+            end
 
-					janitor:Add(tbtn.MouseButton1Click:Connect(function()
-						apply(not handle.Value, true)
-					end))
-				end)
-
-				return handle
-			end
-
+			-- ===== Controls =====
 			function sub:AddSection(text)
 				table.insert(sub._items, function()
 					mk("TextLabel", {
@@ -1057,44 +1040,32 @@ function SayzUI:CreateWindow(opts)
 				return sub
 			end
 
-			-- Label handle: SetText/Set + GetText
-            function sub:AddLabel(text)
-                local handle = { _label = nil, Sub = sub }
+			function sub:AddLabel(text)
+    			local labelTable = {} -- Tabel untuk menyimpan fungsi update
+    			local labelInstance = nil -- Tempat menyimpan objek TextLabel
 
-                table.insert(sub._items, function()
-                    handle._label = mk("TextLabel", {
-                        BackgroundTransparency = 1,
-                        Size = UDim2.new(1, 0, 0, 18),
-                        Font = Enum.Font.Gotham,
-                        TextSize = 13,
-                        TextXAlignment = Enum.TextXAlignment.Left,
-                        TextColor3 = Theme.Muted,
-                        Text = tostring(text),
-                        Parent = contentArea
-                    })
-                end)
+    			table.insert(sub._items, function()
+        			labelInstance = mk("TextLabel", {
+            			BackgroundTransparency = 1,
+            			Size = UDim2.new(1, 0, 0, 18),
+            			Font = Enum.Font.Gotham,
+            			TextSize = 13,
+            			TextXAlignment = Enum.TextXAlignment.Left,
+            			TextColor3 = Theme.Muted,
+            			Text = tostring(text),
+            			Parent = contentArea
+        			})
+    			end)
 
-                -- Fungsi SetText (Supaya script lamamu jalan)
-                function handle:SetText(newText)
-                    if handle._label then
-                        handle._label.Text = tostring(newText)
-                    else
-                        -- Jika label belum dibuat (masih di antrean), kita simpan dulu teksnya
-                        text = newText
-                    end
-                end
+    			-- Tambahkan fungsi SetText agar bisa dipanggil dari luar
+    			function labelTable:SetText(newText)
+        			if labelInstance then
+            			labelInstance.Text = tostring(newText)
+        			end
+    			end
 
-                -- Fungsi Set (Supaya lebih singkat)
-                function handle:Set(newText)
-                    self:SetText(newText)
-                end
-
-                function handle:GetText()
-                    return handle._label and handle._label.Text or tostring(text)
-                end
-
-                return handle
-            end
+    			return labelTable -- Kembalikan tabel fungsinya, bukan 'sub'
+			end
 
 			function sub:AddParagraph(titleText, bodyText)
 				table.insert(sub._items, function()
@@ -1132,6 +1103,7 @@ function SayzUI:CreateWindow(opts)
 						Text = tostring(bodyText),
 						Parent = card
 					})
+					
 				end)
 				return sub
 			end
@@ -1148,235 +1120,231 @@ function SayzUI:CreateWindow(opts)
 				return sub
 			end
 
-			-- ===== Multi-Select Dropdown =====
+			-- ===== Multi-Select Dropdown (Customized for SayzUI) =====
 			function sub:AddMultiDropdown(text, listItems, callback)
-				listItems = listItems or {}
-				local handle = { _items = listItems, Selected = {}, _rebuild = nil, Sub = sub }
-				local TempItems = {}
+                listItems = listItems or {}
+                local handle = { _items = listItems, Selected = {}, _rebuild = nil }
+                local TempItems = {}
 
-				table.insert(sub._items, function()
-					local open = false
-					local card = rowCard()
-					card.ZIndex = 1
-					card.ClipsDescendants = false
+                table.insert(sub._items, function()
+                    local open = false
+                    local card = rowCard()
+                    card.ZIndex = 1
 
-					mk("TextLabel", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(0.4, 0, 1, 0),
-						Font = Enum.Font.GothamSemibold,
-						TextSize = 13,
-						TextColor3 = Theme.Text,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						Text = tostring(text),
-						Parent = card
-					})
+                    mk("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(0.4, 0, 1, 0),
+                        Font = Enum.Font.GothamSemibold,
+                        TextSize = 13,
+                        TextColor3 = Theme.Text,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        Text = tostring(text),
+                        Parent = card
+                    })
 
-					local dropBtn = mk("TextButton", {
-						BackgroundColor3 = Theme.Button,
-						Position = UDim2.new(0.45, 0, 0, 0),
-						Size = UDim2.new(0.55, 0, 1, 0),
-						Font = Enum.Font.Gotham,
-						TextSize = 12,
-						TextColor3 = Theme.Text,
-						Text = "Select Items... ▼",
-						AutoButtonColor = false,
-						Parent = card
-					})
-					corner(dropBtn, 8)
-					stroke(dropBtn, 1, 0.7, Theme.Stroke)
+                    local dropBtn = mk("TextButton", {
+                        BackgroundColor3 = Theme.Button,
+                        Position = UDim2.new(0.45, 0, 0, 0),
+                        Size = UDim2.new(0.55, 0, 1, 0),
+                        Font = Enum.Font.Gotham,
+                        TextSize = 12,
+                        TextColor3 = Theme.Text,
+                        Text = "Select Items... ▼",
+                        Parent = card
+                    })
+                    corner(dropBtn, 8)
 
-					local listContainer = mk("ScrollingFrame", {
-						Visible = false,
-						BackgroundColor3 = Theme.Panel,
-						Position = UDim2.new(0, 0, 1, 4),
-						Size = UDim2.new(1, 0, 0, 150),
-						ZIndex = 500,
-						ScrollBarThickness = 4,
-						BorderSizePixel = 0,
-						Parent = dropBtn
-					})
-					corner(listContainer, 8)
-					stroke(listContainer, 1, 0.5, Theme.Accent)
-					list(listContainer, Enum.FillDirection.Vertical, 2)
-					padding(listContainer, 4, 4, 4, 4)
+                    local listContainer = mk("ScrollingFrame", {
+                        Visible = false,
+                        BackgroundColor3 = Theme.Panel,
+                        Position = UDim2.new(0, 0, 1, 4),
+                        Size = UDim2.new(1, 0, 0, 150),
+                        ZIndex = 500, -- Sangat Tinggi
+                        ScrollBarThickness = 4,
+                        BorderSizePixel = 0,
+                        Parent = dropBtn
+                    })
+                    corner(listContainer, 8)
+                    list(listContainer, Enum.FillDirection.Vertical, 2)
+                    padding(listContainer, 4, 4, 4, 4)
 
-					local function rebuild()
-						for _, ch in ipairs(listContainer:GetChildren()) do
-							if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
-						end
+                    local function rebuild()
+                        for _, ch in ipairs(listContainer:GetChildren()) do
+                            if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
+                        end
 
-						local header = mk("Frame", {
-							Size = UDim2.new(1, 0, 0, 25),
-							BackgroundTransparency = 1,
-							ZIndex = 505,
-							Parent = listContainer
-						})
+                        -- Header Tombol
+                        local header = mk("Frame", {
+                            Size = UDim2.new(1, 0, 0, 25),
+                            BackgroundTransparency = 1,
+                            ZIndex = 505,
+                            Parent = listContainer
+                        })
+                        
+                        local cancel = mk("TextButton", {
+                            Size = UDim2.new(0, 22, 0, 22),
+                            Position = UDim2.new(0, 2, 0, 0),
+                            BackgroundColor3 = Color3.fromRGB(231, 76, 60),
+                            Text = "✕",
+                            TextColor3 = Color3.new(1,1,1),
+                            Font = Enum.Font.GothamBold,
+                            ZIndex = 510,
+                            Parent = header
+                        })
+                        corner(cancel, 6)
 
-						local cancel = mk("TextButton", {
-							Size = UDim2.new(0, 22, 0, 22),
-							Position = UDim2.new(0, 2, 0, 0),
-							BackgroundColor3 = Theme.Danger,
-							Text = "✕",
-							TextColor3 = Color3.new(1,1,1),
-							Font = Enum.Font.GothamBold,
-							ZIndex = 510,
-							AutoButtonColor = false,
-							Parent = header
-						})
-						corner(cancel, 6)
+                        local save = mk("TextButton", {
+                            Size = UDim2.new(0, 22, 0, 22),
+                            Position = UDim2.new(1, -24, 0, 0),
+                            BackgroundColor3 = Color3.fromRGB(46, 204, 113),
+                            Text = "✓",
+                            TextColor3 = Color3.new(1,1,1),
+                            Font = Enum.Font.GothamBold,
+                            ZIndex = 510,
+                            Parent = header
+                        })
+                        corner(save, 6)
 
-						local save = mk("TextButton", {
-							Size = UDim2.new(0, 22, 0, 22),
-							Position = UDim2.new(1, -24, 0, 0),
-							BackgroundColor3 = Theme.Ok,
-							Text = "✓",
-							TextColor3 = Color3.new(1,1,1),
-							Font = Enum.Font.GothamBold,
-							ZIndex = 510,
-							AutoButtonColor = false,
-							Parent = header
-						})
-						corner(save, 6)
+                        save.MouseButton1Click:Connect(function()
+                            handle.Selected = {}
+                            local count = 0
+                            for k, v in pairs(TempItems) do 
+                                handle.Selected[k] = v 
+                                count = count + 1
+                            end
+                            dropBtn.Text = (count > 0 and count .. " Selected ▼") or "Select Items... ▼"
+                            open = false; listContainer.Visible = false; card.ZIndex = 1
+                            if callback then callback(handle.Selected) end
+                        end)
 
-						janitor:Add(save.MouseButton1Click:Connect(function()
-							handle.Selected = {}
-							local count = 0
-							for k, v in pairs(TempItems) do
-								handle.Selected[k] = v
-								count += 1
-							end
-							dropBtn.Text = (count > 0 and (count .. " Selected ▼")) or "Select Items... ▼"
-							open = false
-							listContainer.Visible = false
-							card.ZIndex = 1
-							safeCall(callback, handle.Selected)
-						end))
+                        cancel.MouseButton1Click:Connect(function()
+                            open = false; listContainer.Visible = false; card.ZIndex = 1
+                        end)
 
-						janitor:Add(cancel.MouseButton1Click:Connect(function()
-							open = false
-							listContainer.Visible = false
-							card.ZIndex = 1
-						end))
+                        -- Item List
+                        for _, val in ipairs(handle._items) do
+                            local valStr = tostring(val)
+                            local isSel = TempItems[valStr]
+                            local itemBtn = mk("TextButton", {
+                                BackgroundColor3 = isSel and Theme.Accent or Theme.Button,
+                                Size = UDim2.new(1, -8, 0, 28),
+                                Text = "  " .. valStr,
+                                TextColor3 = isSel and Color3.new(1,1,1) or Theme.Text,
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                Font = Enum.Font.Gotham,
+                                TextSize = 11,
+                                ZIndex = 502,
+                                Parent = listContainer
+                            })
+                            corner(itemBtn, 4)
+                            itemBtn.MouseButton1Click:Connect(function()
+                                TempItems[valStr] = not TempItems[valStr] and true or nil
+                                rebuild()
+                            end)
+                        end
+                        listContainer.CanvasSize = UDim2.new(0,0,0, (#handle._items * 30) + 40)
+                    end
 
-						for _, val in ipairs(handle._items) do
-							local valStr = tostring(val)
-							local isSel = TempItems[valStr]
+                    handle._rebuild = rebuild
+                    
+                    function handle:ClearAll()
+                        handle.Selected = {}
+                        TempItems = {}
+                        dropBtn.Text = "Select Items... ▼"
+                        if open then rebuild() end
+                    end
 
-							local itemBtn = mk("TextButton", {
-								BackgroundColor3 = isSel and Theme.Accent or Theme.Button,
-								Size = UDim2.new(1, -8, 0, 28),
-								Text = "  " .. valStr,
-								TextColor3 = isSel and Color3.new(1,1,1) or Theme.Text,
-								TextXAlignment = Enum.TextXAlignment.Left,
-								Font = Enum.Font.Gotham,
-								TextSize = 11,
-								ZIndex = 502,
-								AutoButtonColor = false,
-								Parent = listContainer
-							})
-							corner(itemBtn, 4)
+                    dropBtn.MouseButton1Click:Connect(function()
+                        open = not open
+                        listContainer.Visible = open
+                        if open then
+                            card.ZIndex = 100
+                            TempItems = {}
+                            for k, v in pairs(handle.Selected) do TempItems[k] = v end
+                            rebuild()
+                        else card.ZIndex = 1 end
+                    end)
+                end)
 
-							janitor:Add(itemBtn.MouseButton1Click:Connect(function()
-								TempItems[valStr] = not TempItems[valStr] and true or nil
-								rebuild()
-							end))
-						end
+                function handle:UpdateList(newList)
+                    handle._items = newList or {}
+                    if handle._rebuild then handle._rebuild() end
+                end
 
-						listContainer.CanvasSize = UDim2.new(0,0,0, (#handle._items * 30) + 40)
-					end
+                return handle
+            end
 
-					handle._rebuild = rebuild
+			-- atur grid
 
-					function handle:ClearAll()
-						handle.Selected = {}
-						TempItems = {}
-						dropBtn.Text = "Select Items... ▼"
-						if open then rebuild() end
-					end
-
-					janitor:Add(dropBtn.MouseButton1Click:Connect(function()
-						open = not open
-						listContainer.Visible = open
-						if open then
-							card.ZIndex = 100
-							TempItems = {}
-							for k, v in pairs(handle.Selected) do TempItems[k] = v end
-							rebuild()
-						else
-							card.ZIndex = 1
-						end
-					end))
-				end)
-
-				function handle:UpdateList(newList)
-					handle._items = newList or {}
-					if handle._rebuild then handle._rebuild() end
-				end
-
-				return handle
-			end
-
-			-- ===== Grid Selector =====
 			function sub:AddGridSelector(callback)
-				table.insert(sub._items, function()
-					local GridContainer = Instance.new("Frame")
-					local UIGridLayout = Instance.new("UIGridLayout")
+    			table.insert(sub._items, function()
+        			local GridContainer = Instance.new("Frame")
+        			local UIGridLayout = Instance.new("UIGridLayout")
 
-					GridContainer.Name = "GridContainer"
-					GridContainer.Parent = contentArea
-					GridContainer.BackgroundTransparency = 1
-					GridContainer.Size = UDim2.new(0, 240, 0, 240)
-					GridContainer.Position = UDim2.new(0.5, -120, 0, 0)
+        			GridContainer.Name = "GridContainer"
+        			GridContainer.Parent = contentArea
+        			GridContainer.BackgroundTransparency = 1
+        			-- Sesuaikan lebar agar pas dengan 5 kolom
+        			GridContainer.Size = UDim2.new(0, 240, 0, 240) 
+        			-- Posisikan di tengah agar cantik
+        			GridContainer.Position = UDim2.new(0.5, -120, 0, 0) 
 
-					UIGridLayout.Parent = GridContainer
-					UIGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-					UIGridLayout.FillDirection = Enum.FillDirection.Horizontal
-					UIGridLayout.FillDirectionMaxCells = 5
-					UIGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
-					UIGridLayout.CellSize = UDim2.new(0, 42, 0, 42)
-					UIGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        			UIGridLayout.Parent = GridContainer
+        			UIGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        			UIGridLayout.FillDirection = Enum.FillDirection.Horizontal
+        			-- KUNCI UTAMA: Batasi hanya 5 kotak per baris
+        			UIGridLayout.FillDirectionMaxCells = 5 
+        			UIGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+        			UIGridLayout.CellSize = UDim2.new(0, 42, 0, 42)
+        			UIGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-					local selectedTiles = {}
+        			local selectedTiles = {}
 
-					for y = 2, -2, -1 do
-						for x = -2, 2 do
-							local coord = x .. "," .. y
-							local TileBtn = Instance.new("TextButton")
-							TileBtn.Parent = GridContainer
-							TileBtn.LayoutOrder = (2-y)*5 + (x+2)
-							TileBtn.Text = (x == 0 and y == 0) and "P" or ""
-							TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-							TileBtn.BorderSizePixel = 0
+        			-- Loop untuk membuat 25 kotak
+        			for y = 2, -2, -1 do
+            			for x = -2, 2 do
+                			local coord = x .. "," .. y
+                			local TileBtn = Instance.new("TextButton")
+                			TileBtn.Parent = GridContainer
+                			-- Urutan Layout agar tidak berantakan
+                			TileBtn.LayoutOrder = (2-y)*5 + (x+2) 
+                			TileBtn.Text = (x == 0 and y == 0) and "P" or "" 
+                			TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+                			TileBtn.BorderSizePixel = 0
+                
+                			local UICorner = Instance.new("UICorner")
+                			UICorner.CornerRadius = UDim.new(0, 6)
+                			UICorner.Parent = TileBtn
 
-							local UICorner = Instance.new("UICorner")
-							UICorner.CornerRadius = UDim.new(0, 6)
-							UICorner.Parent = TileBtn
-
-							janitor:Add(TileBtn.MouseButton1Click:Connect(function()
-								if x == 0 and y == 0 then return end
-
-								if selectedTiles[coord] then
-									selectedTiles[coord] = nil
-									TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-								else
-									selectedTiles[coord] = true
-									TileBtn.BackgroundColor3 = Color3.fromRGB(52, 152, 219)
-								end
-								safeCall(callback, selectedTiles)
-							end))
-						end
-					end
-				end)
-				return sub
+                			janitor:Add(TileBtn.MouseButton1Click:Connect(function()
+                    			if x == 0 and y == 0 then return end
+                    
+                    			if selectedTiles[coord] then
+                        			selectedTiles[coord] = nil
+                        			TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+                    			else
+                        			selectedTiles[coord] = true
+                        			TileBtn.BackgroundColor3 = Color3.fromRGB(52, 152, 219)
+                    			end
+                    			safeCall(callback, selectedTiles)
+                			end))
+            			end
+        			end
+    			end)
+    			return sub
 			end
 
 			-- ===== Input (with Get/Set handle) =====
 			function sub:AddInput(text, placeholder, callback, defaultText)
-				local handle = { Value = tostring(defaultText or ""), _apply = nil, Sub = sub }
+				local handle = {
+					Value = tostring(defaultText or ""),
+					_apply = nil,
+				}
 
 				function handle:Get()
 					return self.Value
 				end
+
 				function handle:Set(v, silent)
 					v = tostring(v or "")
 					self.Value = v
@@ -1457,11 +1425,17 @@ function SayzUI:CreateWindow(opts)
 				startVal = clamp(startVal, minN, maxN)
 				startVal = math.floor(startVal + 0.5)
 
-				local handle = { Value = startVal, _apply = nil, _min = minN, _max = maxN, Sub = sub }
+				local handle = {
+					Value = startVal,
+					_apply = nil,
+					_min = minN,
+					_max = maxN,
+				}
 
 				function handle:Get()
 					return self.Value
 				end
+
 				function handle:Set(v, silent)
 					v = tonumber(v) or self.Value
 					v = clamp(v, self._min, self._max)
@@ -1581,11 +1555,16 @@ function SayzUI:CreateWindow(opts)
 					current = listItems[1]
 				end
 
-				local handle = { Value = current, _apply = nil, _items = listItems, Sub = sub }
+				local handle = {
+					Value = current,
+					_apply = nil,
+					_items = listItems,
+				}
 
 				function handle:Get()
 					return self.Value
 				end
+
 				function handle:Set(v, silent)
 					self.Value = v
 					if self._apply then
@@ -1644,6 +1623,7 @@ function SayzUI:CreateWindow(opts)
 					padding(listContainer, 4, 4, 4, 4)
 
 					local function rebuild()
+						-- hapus item lama (jangan hapus layout/padding)
 						for _, ch in ipairs(listContainer:GetChildren()) do
 							if ch:IsA("TextButton") then
 								ch:Destroy()
@@ -1669,6 +1649,7 @@ function SayzUI:CreateWindow(opts)
 								open = false
 								listContainer.Visible = false
 								card.ZIndex = 1
+
 								handle:Set(val, false)
 							end))
 						end
@@ -1679,8 +1660,12 @@ function SayzUI:CreateWindow(opts)
 					local function apply(v, fireCb)
 						handle.Value = v
 						dropBtn.Text = tostring(v) .. "  ▼"
-						if open then rebuild() end
-						if fireCb then safeCall(callback, v) end
+						if open then
+							rebuild()
+						end
+						if fireCb then
+							safeCall(callback, v)
+						end
 					end
 
 					handle._apply = apply
@@ -1697,6 +1682,7 @@ function SayzUI:CreateWindow(opts)
 						end
 					end))
 
+					-- close when clicking outside
 					janitor:Add(UIS.InputBegan:Connect(function(input, gpe)
 						if gpe then return end
 						if not open then return end
@@ -1733,12 +1719,9 @@ function SayzUI:CreateWindow(opts)
 
 		table.insert(Window._mainTabs, tab)
 
-		-- ✅ FIX: defer auto select (biar subtab sempet kebuat)
+		-- auto select first tab if none active
 		if not Window._activeMain then
-			task.defer(function()
-				if Window._closed then return end
-				setActiveMain()
-			end)
+    		setActiveMain()
 		end
 
 		return tab
