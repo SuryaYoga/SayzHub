@@ -16,7 +16,6 @@ return function(SubTab, Window)
     local blacklistCoords = {}
 
     -- [[ 2. CORE FUNCTIONS ]] --
-
     local function InitDoorDatabase()
         doorDatabase = {}
         for gx, columns in pairs(WorldTiles) do
@@ -73,7 +72,7 @@ return function(SubTab, Window)
         local limit = 0
         while #queue > 0 do
             limit = limit + 1
-            if limit > 3000 then break end
+            if limit > 2500 then break end
             table.sort(queue, function(a, b) return a.cost < b.cost end)
             local current = table.remove(queue, 1)
 
@@ -98,16 +97,6 @@ return function(SubTab, Window)
         return nil
     end
 
-    local function scanAndLockNearbyDoor(gx, gy)
-        local radius = 3 
-        for dx = -radius, radius do
-            for dy = -radius, radius do
-                local key = (gx + dx) .. "," .. (gy + dy)
-                if doorDatabase[key] then lockedDoors[key] = true end
-            end
-        end
-    end
-
     -- [[ 3. UI SECTION ]] --
     SubTab:AddSection("CONTROL PANEL")
     SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(s) 
@@ -115,7 +104,6 @@ return function(SubTab, Window)
         if s then InitDoorDatabase() end
     end)
     SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(s) getgenv().TakeGems = s end)
-    
     SubTab:AddInput("Step Delay", tostring(getgenv().StepDelay), function(v)
         getgenv().StepDelay = tonumber(v) or 0.05
     end)
@@ -132,11 +120,8 @@ return function(SubTab, Window)
         if #names == 0 then
             FilterLabel:SetText("🚫 Blacklist: None")
         else
-            local displayLimit = 3
-            local text = table.concat(names, ", ", 1, math.min(#names, displayLimit))
-            if #names > displayLimit then
-                text = text .. " (+" .. (#names - displayLimit) .. " lainnya)"
-            end
+            local text = table.concat(names, ", ", 1, math.min(#names, 3))
+            if #names > 3 then text = text .. " (+" .. (#names - 3) .. ")" end
             FilterLabel:SetText("🚫 Blacklist: " .. text)
         end
         UpdateBlacklistCache()
@@ -156,14 +141,14 @@ return function(SubTab, Window)
         MultiDrop:UpdateList(items)
     end)
 
-    SubTab:AddButton("Reset Filters & Bad Items", function()
+    SubTab:AddButton("Reset All Filters", function()
         getgenv().ItemBlacklist = {}
         badItems = {}
         lockedDoors = {}
         FilterLabel:SetText("🚫 Blacklist: None")
-        MultiDrop:ClearAll() 
+        if MultiDrop.ClearAll then MultiDrop:ClearAll() end
         UpdateBlacklistCache()
-        Window:Notify("Memory & Blacklist Cleared!", 2)
+        Window:Notify("Filters & Memory Reset!", 2)
     end)
 
     SubTab:AddSection("LIVE STATISTICS")
@@ -171,19 +156,7 @@ return function(SubTab, Window)
     local TargetLabel = SubTab:AddLabel("Target: None")
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
-    -- [[ 4. GRAVITY BYPASS ]] --
-    task.spawn(function()
-        while task.wait() do
-            if getgenv().AutoCollect then
-                pcall(function()
-                    if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
-                    movementModule.Grounded = true 
-                end)
-            end
-        end
-    end)
-
-    -- [[ 5. MAIN LOOP ]] --
+    -- [[ 4. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
         while true do
@@ -194,12 +167,10 @@ return function(SubTab, Window)
                         local target, dist = nil, 500
                         local folders = {"Drops"}
                         if getgenv().TakeGems then table.insert(folders, "Gems") end
-                        
-                        local mapCount = 0
+
                         for _, f in pairs(folders) do
                             local c = workspace:FindFirstChild(f)
                             if c then 
-                                mapCount = mapCount + #c:GetChildren()
                                 for _, item in pairs(c:GetChildren()) do
                                     local id = item:GetAttribute("id") or item.Name
                                     if not getgenv().ItemBlacklist[id] and not badItems[item] then
@@ -209,42 +180,26 @@ return function(SubTab, Window)
                                 end
                             end
                         end
-                        ItemLabel:SetText("Items on Map: " .. mapCount)
 
                         if target then
                             TargetLabel:SetText("Target: " .. (target:GetAttribute("id") or target.Name))
-                            StatusLabel:SetText("Status: Moving...")
-                            
                             local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                             local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
-
+                            
                             local path = findSmartPath(sx, sy, tx, ty)
                             if path then
-                                for _, point in ipairs(path) do
+                                for _, p in ipairs(path) do
                                     if not getgenv().AutoCollect then break end
-                                    Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
+                                    Hitbox.CFrame = CFrame.new(p.X, p.Y, Hitbox.Position.Z)
                                     movementModule.Position = Hitbox.Position
                                     task.wait(getgenv().StepDelay)
-
-                                    local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                                    if char and (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
-                                        scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
-                                        break 
-                                    end
                                 end
-                            else
-                                badItems[target] = true
-                            end
-                        else
-                            TargetLabel:SetText("Target: None")
-                            StatusLabel:SetText("Status: Scanning...")
-                        end
+                            else badItems[target] = true end
+                        else TargetLabel:SetText("Target: None") end
                     end
-                else
-                    StatusLabel:SetText("Status: Paused")
                 end
             end)
-            task.wait(0.2)
+            task.wait(0.1)
         end
     end)
 end
