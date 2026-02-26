@@ -22,8 +22,8 @@ return function(SubTab, Window)
         PnB.Scanning = true
         Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
     end)
-    local _, InfoLabel = SubTab:AddLabel("ID Aktif: None")
-    local _, StokLabel = SubTab:AddLabel("Total Stok: 0")
+    local InfoLabel = SubTab:AddLabel("ID Aktif: None")
+    local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
     SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
@@ -100,26 +100,17 @@ return function(SubTab, Window)
     end
 
     -- Hook Metamethod untuk Scanner
-    if not _G.__SayzPnBHooked then
-        _G.__SayzPnBHooked = true
-    
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-            local args = {...}
-    
-            local P = getgenv().PnBSettings
-            if P and P.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
-                P.TargetID = tonumber(args[2]) or args[2]
-                P.Scanning = false
-                if Window and Window.Notify then
-                    Window:Notify("ID Scanned: " .. tostring(P.TargetID), 2, "ok")
-                end
-            end
-    
-            return oldNamecall(self, ...)
-        end)
-    end
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+        if PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
+            PnB.TargetID = args[2]
+            PnB.Scanning = false
+            Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
+        end
+        return oldNamecall(self, ...)
+    end)
 
     -- ========================================
     -- [4] MAIN LOOP (EKSEKUSI)
@@ -241,4 +232,3 @@ return function(SubTab, Window)
     end)
 
 end
-
