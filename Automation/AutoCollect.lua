@@ -235,9 +235,23 @@ end)
                         local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
 
+                        -- Di dalam loop task.spawn utama
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
-                            for _, point in ipairs(path) do
+                            -- Cek apakah di jalur ini ada blacklist yang terpaksa dilewati
+                            local terpaksa = false
+                            for _, p in ipairs(path) do
+                                if getBlacklistItemAt(math.floor(p.X/4.5+0.5), math.floor(p.Y/4.5+0.5)) then
+                                    terpaksa = true; break
+                                end
+                            end
+                        
+                            if terpaksa then
+                                StatusLabel:SetText("Status: Pathing (Forced through blacklist)")
+                            else
+                                StatusLabel:SetText("Status: Pathing (Safe Route)")
+                            end
+
                                 if not getgenv().AutoCollect then break end
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
@@ -264,3 +278,4 @@ end)
         end
     end)
 end
+
