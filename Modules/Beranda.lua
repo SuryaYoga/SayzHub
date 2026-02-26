@@ -88,28 +88,29 @@ return function(Window)
                 local fps = math.floor(1 / dt)
                 
                 -- 3. Update Label
-                PingLabel:SetText("Ping: " .. ping .. " ms")
-                FPSLabel:SetText("FPS: " .. fps)
+                PingLabel:Set("Ping: " .. ping .. " ms")
+                FPSLabel:Set("FPS: " .. fps)
                 
                 -- 4. Logika Kualitas Sinyal
                 local kualitas = ""
                 if ping < 100 then kualitas = "Sangat Baik (Hijau)"
                 elseif ping < 200 then kualitas = "Cukup Baik (Kuning)"
                 else kualitas = "Buruk / Lag (Merah)" end
-                SinyalLabel:SetText("Kualitas: " .. kualitas)
+                SinyalLabel:Set("Kualitas: " .. kualitas)
                 
                 -- 5. Update Server ID
-                RegionLabel:SetText("Server ID: " .. string.sub(game.JobId, 1, 8))
+                RegionLabel:Set("Server ID: " .. string.sub(game.JobId, 1, 8))
                 
                 -- 6. Update Waktu Bermain
                 local diff = tick() - startTime
                 local h = math.floor(diff / 3600)
                 local m = math.floor((diff % 3600) / 60)
                 local s = math.floor(diff % 60)
-                PlayTimeLabel:SetText(string.format("Waktu Bermain: %02d:%02d:%02d", h, m, s))
+                PlayTimeLabel:Set(string.format("Waktu Bermain: %02d:%02d:%02d", h, m, s))
             end)
             task.wait(1)
         end
     end)
 
 end
+
