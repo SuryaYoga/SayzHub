@@ -77,13 +77,18 @@ return function(SubTab, Window)
             if limit > 3000 then break end 
             table.sort(queue, function(a, b) return a.cost < b.cost end)
             local current = table.remove(queue, 1)
+
             if current.x == targetX and current.y == targetY then return current.path end
+
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
                 local walkable, isBlacklisted = isWalkable(nx, ny)
                 if walkable then
-                    local moveCost = isBlacklisted and 100 or 1
+                    -- BEBAN SANGAT TINGGI (99999): Bot tidak akan mau injak item blacklist 
+                    -- kecuali kalau memang terkurung total (satu-satunya jalan).
+                    local moveCost = isBlacklisted and 99999 or 1
                     local newTotalCost = current.cost + moveCost
+                    
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
                         local newPath = {unpack(current.path)}
@@ -135,7 +140,6 @@ return function(SubTab, Window)
         if state then InitDoorDatabase() end
     end)
 
-    -- TOGGLE GEMS
     SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
         getgenv().TakeGems = state
     end)
@@ -182,7 +186,6 @@ return function(SubTab, Window)
         badItems = {}
         lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
-        -- Perbaikan: Membersihkan dropdown UI
         if MultiDrop.Set then MultiDrop:Set({}) end 
         Window:Notify("Filters & UI Cleared!", 2)
     end)
@@ -222,16 +225,15 @@ return function(SubTab, Window)
 
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
-                            -- Cek jalur keseluruhan
-                            local terpaksa = false
+                            -- Cek jalur keseluruhan untuk update Label Safety
+                            local isForced = false
                             for _, p in ipairs(path) do
                                 if getBlacklistItemAt(math.floor(p.X/4.5+0.5), math.floor(p.Y/4.5+0.5)) then
-                                    terpaksa = true; break
+                                    isForced = true; break
                                 end
                             end
-                            PathLabel:SetText("Safety: " .. (terpaksa and "⚠️ FORCED PATH" or "✅ SAFE ROUTE"))
+                            PathLabel:SetText("Safety: " .. (isForced and "⚠️ FORCED PATH" or "✅ SAFE ROUTE"))
 
-                            -- LOOP JALAN
                             for i, point in ipairs(path) do
                                 if not getgenv().AutoCollect then break end
                                 
@@ -239,12 +241,19 @@ return function(SubTab, Window)
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(getgenv().StepDelay)
-
-                                -- Deteksi Stuck
-                                local charPos = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") and LP.Character.HumanoidRootPart.Position
-                                if charPos and (Vector2.new(charPos.X, charPos.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
-                                    scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
-                                    break 
+                            
+                                -- DETEKSI STUCK
+                                local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                                if char then
+                                    local distance = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
+                                    if distance > 5 then
+                                        local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
+                                        lockedDoors[px .. "," .. py] = true 
+                                        scanAndLockNearbyDoor(px, py) 
+                                        StatusLabel:SetText("Status: ⛔ Stuck! Locking Path.")
+                                        Window:Notify("Path at "..px..","..py.." locked.", 2)
+                                        break
+                                    end
                                 end
                             end
                         else
