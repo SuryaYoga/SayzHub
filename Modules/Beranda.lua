@@ -38,14 +38,14 @@ return function(Window)
     local SinyalSub = BerandaTab:AddSubTab("Sinyal & Statistik")
 
     SinyalSub:AddSection("Koneksi & Jaringan")
-    local PingLabel = SinyalSub:AddLabel("Ping: Menghitung...")
-    local SinyalLabel = SinyalSub:AddLabel("Kualitas: Mengecek...")
-    local RegionLabel = SinyalSub:AddLabel("Server Region: Menghitung...")
+    local _, PingLabel = SinyalSub:AddLabel("Ping: Menghitung...")
+    local _, SinyalLabel = SinyalSub:AddLabel("Kualitas: Mengecek...")
+    local _, RegionLabel = SinyalSub:AddLabel("Server Region: Menghitung...")
 
     SinyalSub:AddSection("Statistik Karakter")
-    local PlayTimeLabel = SinyalSub:AddLabel("Waktu Bermain: 00:00:00")
-    local FPSLabel = SinyalSub:AddLabel("FPS: 0")
-    local UserLabel = SinyalSub:AddLabel("Username: " .. game.Players.LocalPlayer.Name)
+    local _, PlayTimeLabel = SinyalSub:AddLabel("Waktu Bermain: 00:00:00")
+    local _, FPSLabel = SinyalSub:AddLabel("FPS: 0")
+    SinyalSub:AddLabel("Username: " .. game.Players.LocalPlayer.Name)
 
     SinyalSub:AddSection("Aksi")
     SinyalSub:AddButton("Cek Ping (Notifikasi)", function()
@@ -55,8 +55,16 @@ return function(Window)
     end)
 
     SinyalSub:AddButton("Salin Link Server", function()
-        setclipboard("https://www.roblox.com/games/" .. game.PlaceId .. "?jobId=" .. game.JobId)
-        Window:Notify("Link JobId berhasil disalin!", 2, "ok")
+        local url = "https://www.roblox.com/games/" .. tostring(game.PlaceId) .. "?jobId=" .. tostring(game.JobId)
+        local ok = pcall(function()
+            assert(setclipboard, "setclipboard not supported")
+            setclipboard(url)
+        end)
+        if ok then
+            Window:Notify("Link JobId berhasil disalin!", 2, "ok")
+        else
+            Window:Notify(url, 4, "info")
+        end
     end)
 
     -- ========================================
@@ -76,7 +84,8 @@ return function(Window)
                 local ping = math.floor(pingValue)
                 
                 -- 2. Hitung FPS
-                local fps = math.floor(1 / RunService.RenderStepped:Wait())
+                local dt = RunService.RenderStepped:Wait()
+                local fps = math.floor(1 / dt)
                 
                 -- 3. Update Label
                 PingLabel:SetText("Ping: " .. ping .. " ms")
@@ -102,4 +111,5 @@ return function(Window)
             task.wait(1)
         end
     end)
+
 end
