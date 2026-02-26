@@ -5,38 +5,109 @@ return function(SubTab, Window)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
-    -- Ambil setting dari Global atau set default
     getgenv().AutoCollect = getgenv().AutoCollect or false
-    getgenv().StepDelay = getgenv().StepDelay or 0.05 
     getgenv().IgnoreGems = getgenv().IgnoreGems or false
     getgenv().ItemBlacklist = getgenv().ItemBlacklist or {}
 
-    local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local doorDatabase = {} 
-    local lockedDoors = {} 
     local badItems = {} 
+    local activeLabels = {} -- Untuk menyimpan referensi label daftar terpilih
 
-    -- [[ 2. CORE FUNCTIONS ]] --
+    -- [[ 2. UI SECTION: TOP (MAIN) ]] --
+    SubTab:AddSection("Auto Collect Main")
+    
+    SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
+        getgenv().AutoCollect = state
+    end)
 
-    local function InitDoorDatabase()
-        doorDatabase = {}
-        for gx, columns in pairs(WorldTiles) do
-            for gy, tileData in pairs(columns) do
-                local l1 = tileData[1]
-                local itemName = (type(l1) == "table") and l1[1] or l1
-                if itemName and string.find(string.lower(tostring(itemName)), "door") then
-                    doorDatabase[gx .. "," .. gy] = true
-                end
-            end
+    -- [[ 3. UI SECTION: FILTER MANAGEMENT (DIPINDAH KE ATAS) ]] --
+    SubTab:AddSection("Filter Management")
+
+    -- Dropdown Data
+    local allItemNames = {}
+    local nameToId = {}
+    local function UpdateDropdownData()
+        allItemNames = {}
+        for id, data in pairs(IM.ItemsData) do
+            local n = data.Name or tostring(id)
+            table.insert(allItemNames, n)
+            nameToId[n] = id
+        end
+        table.sort(allItemNames)
+    end
+    UpdateDropdownData()
+
+    -- Label untuk menampilkan apa saja yang sedang dipilih
+    local ListHeader = SubTab:AddLabel("--- Active Blacklist ---")
+    local BlacklistContainer = SubTab:AddLabel("None")
+
+    local function RefreshBlacklistUI()
+        local listStr = ""
+        local count = 0
+        for id, _ in pairs(getgenv().ItemBlacklist) do
+            count = count + 1
+            local name = IM.GetName(id) or id
+            listStr = listStr .. "- " .. name .. "\n"
+        end
+        
+        if count == 0 then
+            BlacklistContainer:SetText("None")
+        else
+            BlacklistContainer:SetText(listStr)
         end
     end
 
+    SubTab:AddDropdown("Add Item to Blacklist", allItemNames, function(selected)
+        local id = nameToId[selected]
+        if id then
+            getgenv().ItemBlacklist[id] = true
+            RefreshBlacklistUI()
+            Window:Notify("Added: " .. selected, 2)
+        end
+    end)
+
+    SubTab:AddButton("Scan World Items to List", function()
+        -- Logika scan untuk mengisi database ItemsManager
+        local found = 0
+        for _, folder in pairs({"Drops", "Gems"}) do
+            local c = workspace:FindFirstChild(folder)
+            if c then
+                for _, item in pairs(c:GetChildren()) do
+                    local id = item:GetAttribute("id") or item.Name
+                    IM.RequestItemData(id) -- Memaksa game mencatat item ke database
+                    found = found + 1
+                end
+            end
+        end
+        UpdateDropdownData() -- Refresh daftar nama
+        Window:Notify("Found " .. found .. " items. Re-open dropdown!", 3)
+    end)
+
+    SubTab:AddButton("Clear All Blacklist", function()
+        getgenv().ItemBlacklist = {}
+        badItems = {}
+        RefreshBlacklistUI()
+        Window:Notify("All filters cleared!", 2)
+    end)
+
+    -- [[ 4. UI SECTION: SETTINGS ]] --
+    SubTab:AddSection("Advanced Settings")
+    
+    SubTab:AddToggle("Ignore All Gems", getgenv().IgnoreGems, function(state)
+        getgenv().IgnoreGems = state
+    end)
+
+    SubTab:AddSlider("Step Speed", 0.01, 0.2, 0.05, function(val)
+        getgenv().StepDelay = val
+    end)
+
+    local StatusLabel = SubTab:AddLabel("Status: Idle")
+
+    -- [[ 5. CORE LOGIC (GetNearestItem dengan Filter) ]] --
     local function GetNearestItem()
         local target, dist = nil, 500
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
 
-        -- Folder yang akan dicek
         local folders = {"Drops"}
         if not getgenv().IgnoreGems then table.insert(folders, "Gems") end
 
@@ -44,8 +115,8 @@ return function(SubTab, Window)
             local container = workspace:FindFirstChild(folderName)
             if container then
                 for _, item in pairs(container:GetChildren()) do
-                    -- CEK FILTER (Blacklist & BadItems)
                     local itemId = item:GetAttribute("id") or item.Name
+                    -- Cek apakah item ada di blacklist
                     if not badItems[item] and not getgenv().ItemBlacklist[itemId] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then dist = d; target = item end
@@ -55,6 +126,8 @@ return function(SubTab, Window)
         end
         return target
     end
+
+    
 
     -- [[ 3. NEW FEATURE FUNCTIONS ]] --
 
@@ -255,3 +328,4 @@ return function(SubTab, Window)
         end
     end)
 end
+
