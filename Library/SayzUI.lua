@@ -1057,34 +1057,44 @@ function SayzUI:CreateWindow(opts)
 				return sub
 			end
 
-			-- Label handle: SetText/GetText + .Sub untuk lanjut chaining
-			function sub:AddLabel(text)
-				local handle = { _label = nil, Sub = sub }
+			-- Label handle: SetText/Set + GetText
+            function sub:AddLabel(text)
+                local handle = { _label = nil, Sub = sub }
 
-				table.insert(sub._items, function()
-					handle._label = mk("TextLabel", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(1, 0, 0, 18),
-						Font = Enum.Font.Gotham,
-						TextSize = 13,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						TextColor3 = Theme.Muted,
-						Text = tostring(text),
-						Parent = contentArea
-					})
-				end)
+                table.insert(sub._items, function()
+                    handle._label = mk("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 0, 18),
+                        Font = Enum.Font.Gotham,
+                        TextSize = 13,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextColor3 = Theme.Muted,
+                        Text = tostring(text),
+                        Parent = contentArea
+                    })
+                end)
 
-				function handle:SetText(newText)
-					if handle._label then
-						handle._label.Text = tostring(newText)
-					end
-				end
-				function handle:GetText()
-					return handle._label and handle._label.Text or tostring(text)
-				end
+                -- Fungsi SetText (Supaya script lamamu jalan)
+                function handle:SetText(newText)
+                    if handle._label then
+                        handle._label.Text = tostring(newText)
+                    else
+                        -- Jika label belum dibuat (masih di antrean), kita simpan dulu teksnya
+                        text = newText
+                    end
+                end
 
-				return handle
-			end
+                -- Fungsi Set (Supaya lebih singkat)
+                function handle:Set(newText)
+                    self:SetText(newText)
+                end
+
+                function handle:GetText()
+                    return handle._label and handle._label.Text or tostring(text)
+                end
+
+                return handle
+            end
 
 			function sub:AddParagraph(titleText, bodyText)
 				table.insert(sub._items, function()
