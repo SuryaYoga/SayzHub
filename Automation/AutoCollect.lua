@@ -51,47 +51,87 @@ return function(SubTab, Window)
         return target
     end
 
-    local function isWalkable(gx, gy, currentY)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
-        if lockedDoors[gx .. "," .. gy] then return false end 
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                if string.find(n, "door") then return true end
-                if string.find(n, "frame") then
-                    if currentY and gy > currentY then return true end
-                    return true 
+    -- Tambahkan fungsi pengecekan item di koordinat tertentu
+local function getBlacklistItemAt(gx, gy)
+    for _, folder in pairs({"Drops", "Gems"}) do
+        local container = workspace:FindFirstChild(folder)
+        if container then
+            for _, item in pairs(container:GetChildren()) do
+                local itX, itY = math.floor(item:GetPivot().Position.X/4.5+0.5), math.floor(item:GetPivot().Position.Y/4.5+0.5)
+                if itX == gx and itY == gy then
+                    local id = item:GetAttribute("id") or item.Name
+                    if getgenv().ItemBlacklist[id] then
+                        return true -- Ada item yang diblokir di sini
+                    end
                 end
-                return false 
             end
         end
-        return true 
     end
+    return false
+end
 
-    local function findSmartPath(startX, startY, targetX, targetY)
-        local queue = {{x = startX, y = startY, path = {}}}
-        local visited = {[startX .. "," .. startY] = true}
-        local directions = {{x=1, y=0}, {x=-1, y=0}, {x=0, y=1}, {x=0, y=-1}}
-        local limit = 0
-        while #queue > 0 do
-            limit = limit + 1
-            if limit > 4000 then return nil end 
-            local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then return current.path end
-            for _, d in ipairs(directions) do
-                local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkable(nx, ny, current.y) and not visited[nx .. "," .. ny] then
-                    visited[nx .. "," .. ny] = true
+local function isWalkable(gx, gy, currentY)
+    if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false, false end
+    if lockedDoors[gx .. "," .. gy] then return false, false end 
+
+    if WorldTiles[gx] and WorldTiles[gx][gy] then
+        local l1 = WorldTiles[gx][gy][1]
+        local itemName = (type(l1) == "table") and l1[1] or l1
+        if itemName then
+            local n = string.lower(tostring(itemName))
+            if string.find(n, "door") or string.find(n, "frame") then 
+                return true, getBlacklistItemAt(gx, gy) 
+            end
+            return false, false 
+        end
+    end
+    return true, getBlacklistItemAt(gx, gy)
+end
+
+local function findSmartPath(startX, startY, targetX, targetY)
+    -- Queue sekarang menyimpan 'priority' (seberapa bersih jalurnya)
+    local queue = {{x = startX, y = startY, path = {}, cost = 0}}
+    local visited = {[startX .. "," .. startY] = 0} -- Simpan cost terkecil ke tile ini
+    local directions = {{x=1, y=0}, {x=-1, y=0}, {x=0, y=1}, {x=0, y=-1}}
+    
+    local bestPath = nil
+    local minCost = math.huge
+
+    local limit = 0
+    while #queue > 0 do
+        limit = limit + 1
+        if limit > 5000 then break end 
+        
+        -- Urutkan queue berdasarkan cost terendah (Dijkstra-lite)
+        table.sort(queue, function(a, b) return a.cost < b.cost end)
+        local current = table.remove(queue, 1)
+
+        if current.x == targetX and current.y == targetY then
+            return current.path -- Jalur terbaik ditemukan
+        end
+
+        for _, d in ipairs(directions) do
+            local nx, ny = current.x + d.x, current.y + d.y
+            local walkable, isBlacklisted = isWalkable(nx, ny, current.y)
+            
+            if walkable then
+                -- JIKA LEWAT ITEM BLACKLIST, KASIH BEBAN BERAT (Cost + 100)
+                -- JIKA JALAN BERSIH, BEBAN RINGAN (Cost + 1)
+                local moveCost = isBlacklisted and 100 or 1
+                local newTotalCost = current.cost + moveCost
+                
+                local posKey = nx .. "," .. ny
+                if not visited[posKey] or newTotalCost < visited[posKey] then
+                    visited[posKey] = newTotalCost
                     local newPath = {unpack(current.path)}
                     table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                    table.insert(queue, {x = nx, y = ny, path = newPath})
+                    table.insert(queue, {x = nx, y = ny, path = newPath, cost = newTotalCost})
                 end
             end
         end
-        return nil
     end
+    return nil
+end
 
     local function scanAndLockNearbyDoor(gx, gy)
         local radius = 3 
@@ -221,3 +261,4 @@ return function(SubTab, Window)
         end
     end)
 end
+
