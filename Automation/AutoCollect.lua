@@ -7,12 +7,13 @@ return function(SubTab, Window)
 
     getgenv().AutoCollect = getgenv().AutoCollect or false
     getgenv().StepDelay = getgenv().StepDelay or 0.05 
-    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {}
+    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} -- Filter yang tersimpan
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
     local doorDatabase = {} 
     local lockedDoors = {} 
     local badItems = {} 
+    local currentPool = {"dirt", "dirt_sapling"} -- Isi awal dropdown
 
     -- [[ 2. CORE FUNCTIONS ]] --
 
@@ -39,6 +40,7 @@ return function(SubTab, Window)
             if container then
                 for _, item in pairs(container:GetChildren()) do
                     local itemId = item:GetAttribute("id") or item.Name
+                    -- Cek badItems (stuck) dan ItemBlacklist (user filter)
                     if not badItems[item] and not getgenv().ItemBlacklist[itemId] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then dist = d; target = item end
@@ -58,7 +60,10 @@ return function(SubTab, Window)
             if itemName then
                 local n = string.lower(tostring(itemName))
                 if string.find(n, "door") then return true end
-                if string.find(n, "frame") then return (not currentY or gy >= currentY) end
+                if string.find(n, "frame") then
+                    if currentY and gy > currentY then return true end
+                    return true 
+                end
                 return false 
             end
         end
@@ -88,94 +93,97 @@ return function(SubTab, Window)
         return nil
     end
 
+    local function scanAndLockNearbyDoor(gx, gy)
+        local radius = 3 
+        for dx = -radius, radius do
+            for dy = -radius, radius do
+                local key = (gx + dx) .. "," .. (gy + dy)
+                if doorDatabase[key] then lockedDoors[key] = true end
+            end
+        end
+    end
+
     -- [[ 3. UI ELEMENTS ]] --
-    
-    -- TOGGLE PALING ATAS
-    SubTab:AddSection("Collect Master")
+
+    -- SECTION 1: MAIN TOGGLE (Paling Atas)
+    SubTab:AddSection("Auto Collect Master")
     SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
 
-    -- FILTER MANAGEMENT DI TENGAH
+    -- SECTION 2: FILTER MANAGEMENT
     SubTab:AddSection("Filter Management")
     
     local ActiveFilterLabel = SubTab:AddLabel("Active Blacklist: None")
 
-    local function RefreshFilterDisplay()
-        local listStr = ""
-        local count = 0
+    local function RefreshFilterLabel()
+        local list = {}
         for id, _ in pairs(getgenv().ItemBlacklist) do
-            count = count + 1
-            local name = IM.GetName(id) or id
-            listStr = listStr .. name .. ", "
+            table.insert(list, IM.GetName(id) or id)
         end
-        if count == 0 then
-            ActiveFilterLabel:SetText("Active Blacklist: None")
-        else
-            ActiveFilterLabel:SetText("🚫 Blocked: " .. listStr:sub(1, -3))
-        end
+        ActiveFilterLabel:SetText(#list == 0 and "Active Blacklist: None" or "🚫 Blocked: " .. table.concat(list, ", "))
     end
 
-    -- Karena dropdown library ini statis, kita pakai dropdown awal untuk item dasar
-    SubTab:AddDropdown("Quick Filter", {"dirt", "dirt_sapling"}, function(selected)
-        getgenv().ItemBlacklist[selected] = not getgenv().ItemBlacklist[selected] and true or nil
-        RefreshFilterDisplay()
+    -- MULTI-SELECT DROPDOWN
+    -- Gunakan fungsi AddMultiDropdown yang sudah kita buat di Library
+    local FilterDropdown = Window:AddMultiDropdown(SubTab, "Select Items to Block", currentPool, function(selectedTable)
+        getgenv().ItemBlacklist = selectedTable
+        RefreshFilterLabel()
+        Window:Notify("Filter Saved!", 2)
     end)
 
-    -- Gunakan Window:Prompt (Baris 248 Library) untuk scan dan input ID manual
-    SubTab:AddButton("Scan World & Add ID", function()
-        -- Kita scan dulu world-nya
-        local found = {}
+    SubTab:AddButton("Scan World Items", function()
+        local foundNew = false
         for _, folder in pairs({"Drops", "Gems"}) do
             local c = workspace:FindFirstChild(folder)
             if c then
                 for _, item in pairs(c:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
-                    local name = IM.GetName(id) or id
-                    if not table.find(found, name) then table.insert(found, name .. " (" .. id .. ")") end
+                    if not table.find(currentPool, id) then
+                        table.insert(currentPool, id)
+                        foundNew = true
+                    end
                 end
             end
         end
-        
-        local displayFound = #found > 0 and table.concat(found, ", ") or "No items on ground"
-        
-        -- Munculkan Prompt untuk input ID (Bisa lihat list dari console/label)
-        Window:Prompt("Enter ID String to Block", "Found in world: " .. displayFound, function(val)
-            if val and val ~= "" then
-                getgenv().ItemBlacklist[val] = true
-                RefreshFilterDisplay()
-                Window:Notify("Added " .. val .. " to blacklist", 2)
-            end
-        end)
+        if foundNew then
+            Window:Notify("New items found! Please re-open dropdown.", 3)
+            -- Note: Karena library dropdown statis, idealnya re-create dropdown atau
+            -- beritahu user bahwa pool data sudah diupdate.
+        else
+            Window:Notify("No new items found on ground.", 2)
+        end
     end)
 
     SubTab:AddButton("Clear All Filters", function()
         getgenv().ItemBlacklist = {}
         badItems = {}
-        RefreshFilterDisplay()
-        Window:Notify("Filters Cleared!", 2)
+        lockedDoors = {}
+        FilterDropdown:Reset() -- Fungsi reset di library custom kita
+        RefreshFilterLabel()
+        Window:Notify("All Filters Cleared!", 2)
     end)
 
-    -- SETTINGS DI BAWAH
+    -- SECTION 3: SETTINGS (Di Bawah)
     SubTab:AddSection("Settings")
 
-    -- Solusi Speed Desimal pake Window:Prompt (Baris 248 Library)
-    SubTab:AddButton("Set Step Speed (Current: " .. getgenv().StepDelay .. ")", function()
-        Window:Prompt("Enter Decimal Speed", "Example: 0.05 or 0.02", function(val)
-            local num = tonumber(val)
-            if num then
-                getgenv().StepDelay = num
-                Window:Notify("Speed set to " .. num, 2)
+    -- Menggunakan Window:Prompt untuk input desimal (karena library ga ada AddTextBox)
+    SubTab:AddButton("Set Step Speed (Current: "..getgenv().StepDelay..")", function()
+        Window:Prompt("Speed Config", "Enter decimal (e.g. 0.03):", function(val)
+            local n = tonumber(val)
+            if n then
+                getgenv().StepDelay = n
+                Window:Notify("Speed set to " .. n, 2)
             else
-                Window:Notify("Invalid Number!", 2)
+                Window:Notify("Invalid number!", 2)
             end
         end)
     end)
 
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
-    -- [[ 4. MAIN LOOP & BYPASS ]] --
+    -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
         while task.wait() do
             if getgenv().AutoCollect then
@@ -187,19 +195,22 @@ return function(SubTab, Window)
         end
     end)
 
+    -- [[ 5. MAIN LOOP ]] --
     InitDoorDatabase()
-    RefreshFilterDisplay()
-    
+    RefreshFilterLabel()
+
     task.spawn(function()
         while true do
             pcall(function()
                 if getgenv().AutoCollect then
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     local target = GetNearestItem()
+                    
                     if Hitbox and target then
-                        StatusLabel:SetText("Status: Collecting " .. (target:GetAttribute("id") or "Item"))
+                        StatusLabel:SetText("Status: Pathfinding to " .. (IM.GetName(target:GetAttribute("id") or target.Name) or "Item"))
                         local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
+
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for _, point in ipairs(path) do
@@ -207,12 +218,18 @@ return function(SubTab, Window)
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(getgenv().StepDelay)
+
+                                local charPos = LP.Character and LP.Character.HumanoidRootPart.Position
+                                if charPos and (Vector2.new(charPos.X, charPos.Y) - Vector2.new(point.X, point.Y)).Magnitude > 4.5 then
+                                    scanAndLockNearbyDoor(math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5))
+                                    break 
+                                end
                             end
                         else
                             badItems[target] = true
                         end
                     else
-                        StatusLabel:SetText("Status: Scanning...")
+                        StatusLabel:SetText("Status: Scanning for items...")
                     end
                 else
                     StatusLabel:SetText("Status: Paused")
