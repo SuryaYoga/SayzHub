@@ -8,6 +8,7 @@ local function GetRaw(path)
     return string.format("https://raw.githubusercontent.com/%s/%s/%s/%s",
         getgenv().SayzConfig.UserName, getgenv().SayzConfig.Repo, getgenv().SayzConfig.Branch, path)
 end
+getgenv().GetRaw = GetRaw
 
 -- load library dari repo (disarankan)
 local SayzUI = loadstring(game:HttpGet(GetRaw("Library/SayzUI.lua")))()
@@ -42,3 +43,4 @@ loadstring(game:HttpGet(GetRaw("Modules/Automation.lua")))()(Window)
 loadstring(game:HttpGet(GetRaw("Modules/Miscs.lua")))()(Window)
 
 Window:Notify("SayzUI Modular Berhasil Dimuat!", 3, "ok")
+
