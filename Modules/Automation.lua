@@ -1,62 +1,51 @@
 return function(Window)
-    -- 1. Setup Tab & SubTab
     local OtomatisTab = Window:AddMainTab("Automation")
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
 
-    -- 2) Ambil pembuat URL dari main kalau ada (lebih fleksibel)
-    local GetRaw = getgenv().GetRaw
-    local function MakeUrl(pathOrFile)
-        if type(GetRaw) == "function" then
-            -- pathOrFile contoh: "Automation/AutoPnB.lua"
-            return GetRaw(pathOrFile)
-        end
-        -- fallback kalau GetRaw belum diset
-        return "https://raw.githubusercontent.com/SuryaYoga/SayzHub/main/" .. tostring(pathOrFile)
-    end
+    -- SESUAIKAN PATH INI DENGAN STRUKTUR REPO KAMU
+    -- contoh: kalau file ada di folder "Automation/"
+    local rawPath = "https://raw.githubusercontent.com/SuryaYoga/SayzHub/main/Automation/"
+    -- kalau ternyata file kamu ada di "Modules/Automation/" ganti jadi:
+    -- local rawPath = "https://raw.githubusercontent.com/SuryaYoga/SayzHub/main/Modules/Automation/"
 
-    -- 3. Loader yang aman
-    local function LoadFitur(path, subTabObj)
-        local fullUrl = MakeUrl(path)
+    local function LoadFitur(fileName, subTabObj)
+        local fullUrl = rawPath .. fileName
 
-        -- HttpGet aman
-        local okHttp, code = pcall(function()
+        local success, code = pcall(function()
             return game:HttpGet(fullUrl)
         end)
-        if not okHttp or type(code) ~= "string" then
-            warn("❌ Gagal HttpGet / 404: " .. tostring(fullUrl))
+
+        if not success or type(code) ~= "string" then
+            warn("❌ HTTP gagal / 404: " .. fullUrl)
             return
         end
 
-        -- Compile
         local chunk, err = loadstring(code)
         if not chunk then
-            warn("❌ Syntax Error di file " .. tostring(path) .. ": " .. tostring(err))
+            warn("❌ Syntax Error di " .. fileName .. ": " .. tostring(err))
             return
         end
 
-        -- Execute chunk -> harus return function(SubTab, Window)
-        local okRun, exported = pcall(chunk)
-        if not okRun then
-            warn("❌ Error saat load chunk " .. tostring(path) .. ": " .. tostring(exported))
+        local ok, exported = pcall(chunk)
+        if not ok then
+            warn("❌ Error saat eval " .. fileName .. ": " .. tostring(exported))
             return
         end
 
         if type(exported) ~= "function" then
-            warn("❌ " .. tostring(path) .. " harus `return function(SubTab, Window) ... end`")
+            warn("❌ " .. fileName .. " harus: return function(SubTab, Window) ... end")
             return
         end
 
-        -- Jalankan modul
-        local okExec, runErr = pcall(function()
+        local ok2, runErr = pcall(function()
             exported(subTabObj, Window)
         end)
-        if not okExec then
-            warn("❌ Error saat menjalankan isi " .. tostring(path) .. ": " .. tostring(runErr))
+        if not ok2 then
+            warn("❌ Error runtime " .. fileName .. ": " .. tostring(runErr))
         end
     end
 
-    -- 4. Eksekusi
-    LoadFitur("Automation/AutoPnB.lua", PnBSub)
-    LoadFitur("Automation/AutoCollect.lua", CollectSub)
+    LoadFitur("AutoPnB.lua", PnBSub)
+    LoadFitur("AutoCollect.lua", CollectSub)
 end
