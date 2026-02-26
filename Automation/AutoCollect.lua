@@ -4,9 +4,8 @@ return function(SubTab, Window)
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
 
-    -- Settings Global
     getgenv().AutoCollect = getgenv().AutoCollect or false
-    getgenv().TakeGems = getgenv().TakeGems or true -- Fitur Baru
+    getgenv().TakeGems = getgenv().TakeGems or true 
     getgenv().StepDelay = getgenv().StepDelay or 0.05 
     getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
 
@@ -14,7 +13,6 @@ return function(SubTab, Window)
     local doorDatabase = {} 
     local lockedDoors = {} 
     local badItems = {} 
-    local blacklistCoords = {}
 
     -- [[ 2. CORE FUNCTIONS ]] --
 
@@ -31,28 +29,12 @@ return function(SubTab, Window)
         end
     end
 
-    local function UpdateBlacklistCache()
-        blacklistCoords = {}
-        for _, folder in pairs({"Drops", "Gems"}) do
-            local c = workspace:FindFirstChild(folder)
-            if c then
-                for _, item in pairs(c:GetChildren()) do
-                    local id = item:GetAttribute("id") or item.Name
-                    if getgenv().ItemBlacklist[id] then
-                        local ix = math.floor(item:GetPivot().Position.X/4.5+0.5)
-                        local iy = math.floor(item:GetPivot().Position.Y/4.5+0.5)
-                        blacklistCoords[ix .. "," .. iy] = true
-                    end
-                end
-            end
-        end
-    end
-
     local function GetNearestItem()
         local target, dist = nil, 500
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if not root then return nil end
 
+        -- Cek folder sesuai setting TakeGems
         local folders = {"Drops"}
         if getgenv().TakeGems then table.insert(folders, "Gems") end
 
@@ -61,6 +43,7 @@ return function(SubTab, Window)
             if container then
                 for _, item in pairs(container:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
+                    -- Filter Blacklist dimasukkan di sini
                     if not getgenv().ItemBlacklist[id] and not badItems[item] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then dist = d; target = item end
@@ -125,7 +108,6 @@ return function(SubTab, Window)
     end
 
     -- [[ 3. UI ELEMENTS ]] --
-    
     SubTab:AddSection("CONTROL PANEL")
     SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
@@ -133,39 +115,33 @@ return function(SubTab, Window)
     end)
     SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(s) getgenv().TakeGems = s end)
     
-    -- Input Teks untuk Delay (Ganti Slider)
-    SubTab:AddInput("Step Delay (Sec)", tostring(getgenv().StepDelay), function(v)
-        getgenv().StepDelay = tonumber(v) or 0.05
+    SubTab:AddInput("Step Speed Delay", tostring(getgenv().StepDelay), function(val)
+        getgenv().StepDelay = tonumber(val) or 0.05
     end)
 
-    -- ITEM FILTER (Sekarang di Atas Statistik)
+    -- BAGIAN FILTER (Sesuai request: Nama Item muncul di Label)
     SubTab:AddSection("ITEM FILTER")
     local FilterLabel = SubTab:AddLabel("🚫 Blacklist: None")
 
     local MultiDrop
     MultiDrop = SubTab:AddMultiDropdown("Blacklist Items", {}, function(selected)
         getgenv().ItemBlacklist = selected
-        
         local names = {}
         for name, _ in pairs(selected) do table.insert(names, name) end
         
         if #names == 0 then
             FilterLabel:SetText("🚫 Blacklist: None")
         else
-            local displayLimit = 3
-            local text = table.concat(names, ", ", 1, math.min(#names, displayLimit))
-            if #names > displayLimit then text = text .. " (+" .. (#names - displayLimit) .. ")" end
-            FilterLabel:SetText("🚫 Blacklist: " .. text)
+            local show = table.concat(names, ", ", 1, math.min(#names, 3))
+            if #names > 3 then show = show .. " (+" .. (#names-3) .. ")" end
+            FilterLabel:SetText("🚫 Blacklist: " .. show)
         end
-        UpdateBlacklistCache()
     end)
 
     SubTab:AddButton("Scan World Items", function()
         local items = {}
-        local folders = {"Drops"}
-        if getgenv().TakeGems then table.insert(folders, "Gems") end
-        for _, f in pairs(folders) do
-            local c = workspace:FindFirstChild(f)
+        for _, folder in pairs({"Drops", "Gems"}) do
+            local c = workspace:FindFirstChild(folder)
             if c then for _, item in pairs(c:GetChildren()) do
                 local id = item:GetAttribute("id") or item.Name
                 if not table.find(items, id) then table.insert(items, id) end
@@ -180,13 +156,12 @@ return function(SubTab, Window)
         lockedDoors = {}
         FilterLabel:SetText("🚫 Blacklist: None")
         if MultiDrop.ClearAll then MultiDrop:ClearAll() end
-        UpdateBlacklistCache()
-        Window:Notify("Filters & Blacklist Reset!", 2)
+        Window:Notify("Cleared!", 2)
     end)
 
     SubTab:AddSection("LIVE STATISTICS")
     local StatusLabel = SubTab:AddLabel("Status: Idle")
-    local TargetLabel = SubTab:AddLabel("Targeting: None")
+    local TargetLabel = SubTab:AddLabel("Target: None")
 
     -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
@@ -200,7 +175,7 @@ return function(SubTab, Window)
         end
     end)
 
-    -- [[ 5. MAIN LOOP ]] --
+    -- [[ 5. MAIN LOOP (PERSIS KODE AMAN KAMU) ]] --
     InitDoorDatabase()
     task.spawn(function()
         while true do
@@ -242,7 +217,7 @@ return function(SubTab, Window)
                     StatusLabel:SetText("Status: Paused")
                 end
             end)
-            task.wait(0.2)
+            task.wait(0.2) -- Jeda Main Loop tetap 0.2 sesuai kode aman kamu
         end
     end)
 end
