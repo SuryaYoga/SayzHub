@@ -1136,6 +1136,8 @@ function SayzUI:CreateWindow(opts)
 			    table.insert(sub._items, function()
 			        local open = false
 			        local card = rowCard()
+					-- Agar tidak tertutup UI game, pastikan ScreenGui induk memiliki DisplayOrder tinggi
+			        card.ZIndex = 1000
 			         
 			
 			        mk("TextLabel", {
@@ -1282,7 +1284,7 @@ function SayzUI:CreateWindow(opts)
 			                for k, v in pairs(handle.Selected) do TempItems[k] = v end
 			                rebuild()
 			            else 
-			                card.ZIndex = 1 
+			                card.ZIndex = 1001 
 			            end
 			        end)
 			    end)
