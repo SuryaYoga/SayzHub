@@ -161,6 +161,7 @@ function SayzUI:GetThemes()
 end
 
 function SayzUI:CreateWindow(opts)
+	_G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 	opts = opts or {}
 	local title = opts.Title or "Sayz Hub"
 	local subtitle = opts.Subtitle or "UI Framework"
@@ -828,7 +829,10 @@ function SayzUI:CreateWindow(opts)
 	janitor:Add(minBtn.MouseButton1Click:Connect(function() Window:Minimize() end))
 	janitor:Add(closeBtn.MouseButton1Click:Connect(function() Window:ShowCloseConfirm() end))
 	janitor:Add(btnNo.MouseButton1Click:Connect(function() Window:HideCloseConfirm() end))
-	janitor:Add(btnYes.MouseButton1Click:Connect(function() Window:Destroy("confirmed_close") end))
+	janitor:Add(btnYes.MouseButton1Click:Connect(function() 
+	    _G.LatestRunToken = (_G.LatestRunToken or 0) + 1 
+	    Window:Destroy("confirmed_close") 
+	end))
 
 	-- ===== Toggle keybind (K) - ignore when typing in TextBox =====
 	janitor:Add(UIS.InputBegan:Connect(function(input, gpe)
