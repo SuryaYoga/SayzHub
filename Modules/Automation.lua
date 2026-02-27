@@ -3,39 +3,61 @@ return function(Window)
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
 
-    -- Kita gunakan fungsi GetRaw dari main.lua agar otomatis sinkron
+    -- Ambil token untuk memastikan loop di sub-modul bisa berhenti total
+    local myToken = _G.LatestRunToken
+
+    -- Fungsi muat fitur dengan Retry Logic & Config Support
     local function LoadFitur(fileName, subTabObj)
-        -- Path folder tempat fitur AutoPnB.lua dan AutoCollect.lua berada
         local fullUrl = getgenv().GetRaw("Automation/" .. fileName)
+        local maxRetries = 3
+        local code = nil
+        local success = false
 
-        local success, code = pcall(function()
-            return game:HttpGet(fullUrl)
-        end)
+        -- Memberikan feedback ke Loading Overlay (Poin 3)
+        if Window._loadingText then
+            Window:SetLoadingText("Downloading " .. fileName .. "...")
+        end
 
-        if not success or type(code) ~= "string" then
-            warn("❌ Gagal memuat fitur: " .. fileName .. " (Cek koneksi/path)")
+        -- Retry Logic (Poin 4)
+        for i = 1, maxRetries do
+            success, code = pcall(function() 
+                return game:HttpGet(fullUrl) 
+            end)
+            if success and type(code) == "string" then break end
+            task.wait(1.5) -- Jeda antar percobaan
+        end
+
+        if not success then
+            Window:Notify("Gagal download: " .. fileName, 5, "danger")
+            warn("❌ SayzHub: Gagal memuat modul setelah 3x percobaan.")
             return
         end
 
         local chunk, err = loadstring(code)
         if not chunk then
-            warn("❌ Syntax Error [" .. fileName .. "]: " .. tostring(err))
+            warn("❌ SayzHub Syntax Error [" .. fileName .. "]: " .. tostring(err))
             return
         end
 
+        -- Eksekusi sub-modul
         local ok, exported = pcall(chunk)
         if ok and type(exported) == "function" then
-            -- Jalankan fitur dan kirim Window sebagai parameter
             local ok2, runErr = pcall(function()
-                exported(subTabObj, Window)
+                -- Kita kirim: 
+                -- 1. subTabObj (untuk isi UI)
+                -- 2. Window (untuk notifikasi/loading)
+                -- 3. myToken (untuk kill-switch loop)
+                exported(subTabObj, Window, myToken)
             end)
-            if not ok2 then warn("❌ Runtime Error [" .. fileName .. "]: " .. tostring(runErr)) end
+            if not ok2 then 
+                warn("❌ SayzHub Runtime Error [" .. fileName .. "]: " .. tostring(runErr)) 
+            end
         else
-            warn("❌ Format file " .. fileName .. " tidak valid (Bukan function)")
+            warn("❌ SayzHub: Modul " .. fileName .. " tidak mengembalikan fungsi.")
         end
     end
 
-    -- Memanggil fitur-fitur utama
+    -- Eksekusi Load
     LoadFitur("AutoPnB.lua", PnBSub)
     LoadFitur("AutoCollect.lua", CollectSub)
 end
