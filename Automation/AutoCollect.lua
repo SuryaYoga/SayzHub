@@ -10,6 +10,7 @@ return function(SubTab, Window, myToken)
     getgenv().TakeGems = getgenv().TakeGems or true 
     getgenv().StepDelay = getgenv().StepDelay or 0.05 
     getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
+    -- Ini fitur Radius (Default 50) - Algoritma asli tetap menggunakan ini
     getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
@@ -57,10 +58,12 @@ return function(SubTab, Window, myToken)
     end
 
     local function isWalkable(gx, gy)
+        -- Cek Batas Map
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
             return false, false 
         end
         
+        -- Cek Pintu yang pernah bikin stuck
         if lockedDoors[gx .. "," .. gy] then 
             return false, false 
         end 
@@ -72,6 +75,7 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
+                -- Pintu dan Frame dianggap bisa dilewati
                 if string.find(n, "door") or string.find(n, "frame") then 
                     return true, hasBlacklist
                 end
@@ -107,6 +111,7 @@ return function(SubTab, Window, myToken)
                 local walkable, isBlacklisted = isWalkable(nx, ny)
 
                 if walkable then
+                    -- LOGIKA RADIUS/BEBAN (Original):
                     local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
 
@@ -168,6 +173,7 @@ return function(SubTab, Window, myToken)
 
     SubTab:AddSection("Path & Speed Settings")
     
+    -- slider v3.1 support decimal (parameter 2 untuk presisi desimal)
     getgenv().SayzUI_Handles["StepDelaySlider"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, getgenv().StepDelay, function(val)
         getgenv().StepDelay = val
     end, 2)
@@ -262,6 +268,7 @@ return function(SubTab, Window, myToken)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(getgenv().StepDelay)
 
+                                -- Deteksi Stuck Pintu
                                 local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                                 if char then
                                     local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
