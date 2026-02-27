@@ -1,9 +1,7 @@
--- [[ 1. SCRIPT IDENTITY & CLEANUP ]] --
-getgenv().SayzLatestRunID = nil -- Matikan script lama
-task.wait(0.5) -- JEDA PENTING: Memberi waktu loop lama untuk berhenti
-
-local CurrentRunID = os.clock()
-getgenv().SayzLatestRunID = CurrentRunID
+-- [[ 1. SCRIPT IDENTITY & TOKEN SYSTEM ]] --
+-- Gunakan Token agar sinkron dengan library SayzUI yang sudah kita modif
+_G.LatestRunToken = (_G.LatestRunToken or 0) + 1
+local myToken = _G.LatestRunToken
 
 -- [[ 2. CONFIGURATION ]] --
 getgenv().SayzConfig = {
@@ -19,7 +17,6 @@ end
 getgenv().GetRaw = GetRaw
 
 -- [[ 3. GLOBAL SETTINGS TABLE ]] --
--- Kita paksa reset setiap run agar tidak "nyangkut" settingan lamanya
 getgenv().SayzSettings = {
     AutoCollect = {
         Enabled = false,
@@ -41,6 +38,7 @@ getgenv().SayzSettings = {
 }
 
 -- [[ 4. UI INITIALIZATION ]] --
+-- Pastikan Library SayzUI.lua di GitHub sudah kamu update dengan _G.LatestRunToken tadi
 local SayzUI = loadstring(game:HttpGet(GetRaw("Library/SayzUI.lua")))()
 
 local Window = SayzUI:CreateWindow({
@@ -49,29 +47,33 @@ local Window = SayzUI:CreateWindow({
     Theme = "BlueWhite",
     ToggleKeybind = Enum.KeyCode.K,
     ShowWelcomeToast = true,
-    ShowLoading = true
+    ShowLoading = true,
+    -- Menambahkan fungsi OnClose agar token naik saat UI ditutup
+    OnClose = function()
+        _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
+        getgenv().SayzSettings = nil
+        print("SayzHub: Stopped and Cleaned.")
+    end
 })
 
--- Memaksa UI ke depan
-pcall(function()
-    local gui = game:GetService("CoreGui"):FindFirstChild("SayzUI v1") or game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SayzUI v1")
-    if gui then gui.DisplayOrder = 9999 end
-end)
-
--- [[ 5. KILL SWITCH (ON CLOSE) ]] --
--- Jika library kamu punya OnClose, gunakan ini. Jika tidak, tambahkan tombol Unload nanti.
-if Window.OnClose then
-    Window:OnClose(function()
-        getgenv().SayzLatestRunID = nil
-        getgenv().SayzSettings = nil
-        print("SayzHub: Fitur dimatikan karena UI ditutup.")
-    end)
+-- [[ 5. LOAD MODULES ]] --
+-- Kita bungkus dengan pcall agar jika satu modul error, yang lain tetap jalan
+local function SafeLoad(path, name)
+    local success, code = pcall(game.HttpGet, game, GetRaw(path))
+    if success then
+        local chunk, err = loadstring(code)
+        if chunk then
+            pcall(function() chunk()(Window) end)
+        else
+            warn("Syntax Error in " .. name .. ": " .. err)
+        end
+    else
+        warn("Failed to download " .. name)
+    end
 end
 
--- [[ 6. LOAD MODULES ]] --
-loadstring(game:HttpGet(GetRaw("Modules/Beranda.lua")))()(Window)
-loadstring(game:HttpGet(GetRaw("Modules/Automation.lua")))()(Window)
-loadstring(game:HttpGet(GetRaw("Modules/Miscs.lua")))()(Window)
+SafeLoad("Modules/Beranda.lua", "Beranda")
+SafeLoad("Modules/Automation.lua", "Automation")
+SafeLoad("Modules/Miscs.lua", "Miscs")
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
-
