@@ -5,17 +5,21 @@ return function(SubTab, Window, myToken)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
-    -- [FIX-3] AutoCollect sekarang pakai SayzSettings.AutoCollect sebagai sumber kebenaran
-    -- TIDAK lagi inisialisasi getgenv() langsung agar tidak bentrok dengan PnB SmartCollect
-    local AC = getgenv().SayzSettings.AutoCollect
+    -- Pengaturan Global
+    getgenv().AutoCollect = getgenv().AutoCollect or false
+    getgenv().TakeGems = getgenv().TakeGems or true 
+    getgenv().StepDelay = getgenv().StepDelay or 0.05 
+    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
+    getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local doorDatabase = {}
-    local lockedDoors = {}
-    local badItems = {}
-    local currentPool = {}
+    local doorDatabase = {} 
+    local lockedDoors = {} 
+    local badItems = {} 
+    local currentPool = {} 
 
     -- [[ 2. CORE FUNCTIONS ]] --
+
     local function InitDoorDatabase()
         doorDatabase = {}
         for gx, columns in pairs(WorldTiles) do
@@ -31,7 +35,7 @@ return function(SubTab, Window, myToken)
 
     local function getBlacklistItemAt(gx, gy)
         local folders = {"Drops"}
-        if AC.TakeGems then table.insert(folders, "Gems") end
+        if getgenv().TakeGems then table.insert(folders, "Gems") end
         for _, folderName in pairs(folders) do
             local container = workspace:FindFirstChild(folderName)
             if container then
@@ -39,10 +43,11 @@ return function(SubTab, Window, myToken)
                     local itPos = item:GetPivot().Position
                     local itX = math.floor(itPos.X / 4.5 + 0.5)
                     local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                    
                     if itX == gx and itY == gy then
                         local id = item:GetAttribute("id") or item.Name
-                        if AC.ItemBlacklist[id] then
-                            return true
+                        if getgenv().ItemBlacklist[id] then 
+                            return true 
                         end
                     end
                 end
@@ -52,12 +57,13 @@ return function(SubTab, Window, myToken)
     end
 
     local function isWalkable(gx, gy)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
-            return false, false
+        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
+            return false, false 
         end
-        if lockedDoors[gx .. "," .. gy] then
-            return false, false
-        end
+        
+        if lockedDoors[gx .. "," .. gy] then 
+            return false, false 
+        end 
 
         local hasBlacklist = getBlacklistItemAt(gx, gy)
 
@@ -66,10 +72,10 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                if string.find(n, "door") or string.find(n, "frame") then
+                if string.find(n, "door") or string.find(n, "frame") then 
                     return true, hasBlacklist
                 end
-                return false, false
+                return false, false 
             end
         end
         return true, hasBlacklist
@@ -79,31 +85,41 @@ return function(SubTab, Window, myToken)
         local queue = {{x = startX, y = startY, path = {}, cost = 0}}
         local visited = {[startX .. "," .. startY] = 0}
         local directions = {
-            {x = 1, y = 0}, {x = -1, y = 0},
+            {x = 1, y = 0}, {x = -1, y = 0}, 
             {x = 0, y = 1}, {x = 0, y = -1}
         }
+        
         local limitCount = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limitCount = limitCount + 1
-            if limitCount > 4000 then break end
+            if limitCount > 4000 then break end 
+
             table.sort(queue, function(a, b) return a.cost < b.cost end)
             local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then
-                return current.path
+
+            if current.x == targetX and current.y == targetY then 
+                return current.path 
             end
+
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
                 local walkable, isBlacklisted = isWalkable(nx, ny)
+
                 if walkable then
-                    -- [FIX-3] Pakai AC.AvoidanceStrength bukan getgenv().AvoidanceStrength
-                    local moveCost = isBlacklisted and AC.AvoidanceStrength or 1
+                    local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
+
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
                         local newPath = {unpack(current.path)}
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x = nx, y = ny, path = newPath, cost = newTotalCost})
+                        table.insert(queue, {
+                            x = nx, 
+                            y = ny, 
+                            path = newPath, 
+                            cost = newTotalCost
+                        })
                     end
                 end
             end
@@ -117,18 +133,18 @@ return function(SubTab, Window, myToken)
         if not root then return nil end
 
         local folders = {"Drops"}
-        if AC.TakeGems then table.insert(folders, "Gems") end
+        if getgenv().TakeGems then table.insert(folders, "Gems") end
 
         for _, folder in pairs(folders) do
             local container = workspace:FindFirstChild(folder)
             if container then
                 for _, item in pairs(container:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
-                    if not badItems[item] and not AC.ItemBlacklist[id] then
+                    if not badItems[item] and not getgenv().ItemBlacklist[id] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
-                        if d < dist then
+                        if d < dist then 
                             dist = d
-                            target = item
+                            target = item 
                         end
                     end
                 end
@@ -138,29 +154,28 @@ return function(SubTab, Window, myToken)
     end
 
     -- [[ 3. UI ELEMENTS ]] --
-    SubTab:AddSection("Auto Collect Master")
 
-    getgenv().SayzUI_Handles["AutoCollectEnabled"] = SubTab:AddToggle("Enable Auto Collect", AC.Enabled, function(state)
-        AC.Enabled = state
+    SubTab:AddSection("Auto Collect Master")
+    
+    getgenv().SayzUI_Handles["AutoCollectEnabled"] = SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
+        getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
 
-    getgenv().SayzUI_Handles["TakeGemsToggle"] = SubTab:AddToggle("Collect Gems", AC.TakeGems, function(state)
-        AC.TakeGems = state
+    getgenv().SayzUI_Handles["TakeGemsToggle"] = SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
+        getgenv().TakeGems = state
     end)
 
     SubTab:AddSection("Path & Speed Settings")
-
-    -- [FIX-3] Slider update AC.StepDelay bukan getgenv().StepDelay global
-    getgenv().SayzUI_Handles["StepDelaySlider"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, AC.StepDelay, function(val)
-        AC.StepDelay = val
+    
+    getgenv().SayzUI_Handles["StepDelaySlider"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, getgenv().StepDelay, function(val)
+        getgenv().StepDelay = val
     end, 2)
 
-    -- [FIX-3] Input update AC.AvoidanceStrength bukan getgenv().AvoidanceStrength global
-    getgenv().SayzUI_Handles["AvoidanceInput"] = SubTab:AddInput("Avoidance Radius (Cost)", tostring(AC.AvoidanceStrength), function(v)
+    getgenv().SayzUI_Handles["AvoidanceInput"] = SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
         local val = tonumber(v)
         if val then
-            AC.AvoidanceStrength = val
+            getgenv().AvoidanceStrength = val
             Window:Notify("Avoidance set to: " .. val, 2)
         end
     end)
@@ -170,7 +185,7 @@ return function(SubTab, Window, myToken)
 
     local MultiDrop
     MultiDrop = SubTab:AddMultiDropdown("Filter Items", currentPool, function(selected)
-        AC.ItemBlacklist = selected
+        getgenv().ItemBlacklist = selected
         local list = {}
         for k, _ in pairs(selected) do table.insert(list, k) end
         FilterLabel:SetText(#list > 0 and "Active Blacklist: " .. table.concat(list, ", ") or "Active Blacklist: None")
@@ -194,12 +209,12 @@ return function(SubTab, Window, myToken)
     end)
 
     SubTab:AddButton("Reset All Filters", function()
-        AC.ItemBlacklist = {}
+        getgenv().ItemBlacklist = {}
         badItems = {}
         lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
-        if MultiDrop and MultiDrop.Set then
-            MultiDrop:Set({})
+        if MultiDrop and MultiDrop.Set then 
+            MultiDrop:Set({}) 
         end
         Window:Notify("All settings cleared!", 2)
     end)
@@ -212,10 +227,10 @@ return function(SubTab, Window, myToken)
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             task.wait()
-            if AC.Enabled then
+            if getgenv().AutoCollect then
                 pcall(function()
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
-                    movementModule.Grounded = true
+                    movementModule.Grounded = true 
                 end)
             end
         end
@@ -226,37 +241,32 @@ return function(SubTab, Window, myToken)
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             pcall(function()
-                if AC.Enabled then
-                    local Hitbox = workspace:FindFirstChild("Hitbox")
-                        and workspace.Hitbox:FindFirstChild(LP.Name)
+                if getgenv().AutoCollect then
+                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     local target = GetNearestItem()
-
+                    
                     if Hitbox and target then
                         local tName = IM.GetName(target:GetAttribute("id") or target.Name) or "Item"
                         TargetLabel:SetText("Target: " .. tName)
-
-                        local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-                        local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-                        local tx = math.floor(target:GetPivot().Position.X / 4.5 + 0.5)
-                        local ty = math.floor(target:GetPivot().Position.Y / 4.5 + 0.5)
+                        
+                        local sx, sy = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
+                        local tx, ty = math.floor(target:GetPivot().Position.X/4.5+0.5), math.floor(target:GetPivot().Position.Y/4.5+0.5)
 
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for i, point in ipairs(path) do
-                                if not AC.Enabled or _G.LatestRunToken ~= myToken then break end
+                                if not getgenv().AutoCollect or _G.LatestRunToken ~= myToken then break end
+                                
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
-                                -- [FIX-3] Pakai AC.StepDelay bukan getgenv().StepDelay
-                                task.wait(AC.StepDelay)
+                                task.wait(getgenv().StepDelay)
 
                                 local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                                 if char then
-                                    local dist = (Vector2.new(char.Position.X, char.Position.Y)
-                                        - Vector2.new(point.X, point.Y)).Magnitude
+                                    local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
                                     if dist > 5 then
-                                        local px = math.floor(point.X / 4.5 + 0.5)
-                                        local py = math.floor(point.Y / 4.5 + 0.5)
+                                        local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
                                         lockedDoors[px .. "," .. py] = true
                                         break
                                     end
