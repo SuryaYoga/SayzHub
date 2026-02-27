@@ -1,32 +1,13 @@
 return function(SubTab, Window)
     -- ========================================
-    -- [1] VARIABEL & SETUP (SINKRONISASI PUSAT)
+    -- [1] VARIABEL & SETUP
     -- ========================================
-    
-    -- Cek apakah tabel utama ada, jika tidak ada buat tabel darurat agar tidak error
-    if not getgenv().SayzSettings then getgenv().SayzSettings = {} end
-    if not getgenv().SayzSettings.PnB then
-        getgenv().SayzSettings.PnB = {
-            Master = false,
-            Place = false,
-            Break = false,
-            Scanning = false,
-            TargetID = nil,
-            DelayScale = 1,
-            ActualDelay = 0.12,
-            PlaceDelay = 0.1,
-            SelectedTiles = {},
-            OriginGrid = nil,
-            LockPosition = false,
-            BreakMode = "Mode 1 (Fokus)"
-        }
-    end
-
-    -- Sekarang kita ambil variabelnya dengan aman
+    -- Merujuk ke Pusat Data di Main.lua
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
     
+    -- Variabel internal untuk status transisi
     _G.LastPnBState = "Waiting" 
 
     -- ========================================
@@ -42,11 +23,12 @@ return function(SubTab, Window)
         PnB.Scanning = true
         Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
     end)
-    local InfoLabel = SubTab:AddLabel("ID Aktif: " .. tostring(PnB.TargetID or "None"))
+    local InfoLabel = SubTab:AddLabel("ID Aktif: None")
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale or 1), function(v)
+    -- Default value mengambil dari tabel PnB.DelayScale
+    SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale), function(v)
         local val = tonumber(v) or 1
         if val < 0.1 then val = 0.1 end
         PnB.DelayScale = val
@@ -56,6 +38,8 @@ return function(SubTab, Window)
     SubTab:AddSection("GRID TARGET (5x5)")
     SubTab:AddGridSelector(function(selectedTable)
         PnB.SelectedTiles = selectedTable
+        
+        -- Auto-Set Origin saat memilih grid
         local char = LP.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
@@ -85,7 +69,6 @@ return function(SubTab, Window)
     SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
         PnB.BreakMode = v
     end)
-
 
     -- ========================================
     -- [3] FUNCTIONS HELPER
@@ -132,26 +115,17 @@ return function(SubTab, Window)
     end)
 
     -- ========================================
-    -- [4] MAIN LOOP (DENGAN KILL SWITCH KETAT)
+    -- [4] MAIN LOOP (EKSEKUSI)
     -- ========================================
-    local MyRunID = getgenv().SayzLatestRunID -- Menangkap ID eksekusi saat ini
-
     task.spawn(function()
-        -- Loop Utama
         while true do
-            -- CEK KILL SWITCH: Berhenti jika ID berubah atau UI di-close
-            if getgenv().SayzLatestRunID ~= MyRunID or not getgenv().SayzSettings then
-                print("PnB: Loop lama dihentikan.")
-                break 
-            end
-
             if PnB.Master then
                 pcall(function()
                     local char = LP.Character
                     local root = char and char:FindFirstChild("HumanoidRootPart")
                     if not root then return end
 
-                    -- Tentukan Base Grid (Lock Position Logic)
+                    -- Tentukan Base Grid
                     local baseGrid
                     if PnB.LockPosition and PnB.OriginGrid then
                         baseGrid = PnB.OriginGrid
@@ -163,20 +137,52 @@ return function(SubTab, Window)
                         PnB.OriginGrid = baseGrid
                     end
 
-                    -- Ambil Area Info
+                    -- Ambil data target dari Grid Selector
+                    local function getAreaInfo()
+                        local targets = {}
+                        local currentFilled = 0
+                        local selectedList = {}
+
+                        for coordKey, active in pairs(PnB.SelectedTiles) do
+                            if active then
+                                local parts = string.split(coordKey, ",")
+                                table.insert(selectedList, {ox = tonumber(parts[1]), oy = tonumber(parts[2])})
+                            end
+                        end
+
+                        table.sort(selectedList, function(a, b)
+                            if a.oy ~= b.oy then return a.oy > b.oy end
+                            return a.ox < b.ox
+                        end)
+
+                        for _, offset in ipairs(selectedList) do
+                            local tx = baseGrid.x + offset.ox
+                            local ty = baseGrid.y + offset.oy
+                            local tileData = worldData[tx] and worldData[tx][ty]
+                            local blockExist = tileData and tileData[1] ~= nil
+                            local wallExist = tileData and tileData[2] ~= nil
+                            local isFilled = blockExist or wallExist
+                            
+                            table.insert(targets, {
+                                pos = Vector2.new(tx, ty), 
+                                isFilled = isFilled,
+                                layer = blockExist and 1 or (wallExist and 2 or 1)
+                            })
+                            if isFilled then currentFilled = currentFilled + 1 end
+                        end
+                        return targets, currentFilled
+                    end
+
                     local areaData, filledCount = getAreaInfo()
                     local maxTiles = #areaData
 
-                    -- [[ LOGIKA PLACE ]] --
+                    -- LOGIKA PLACE
                     if PnB.Place and maxTiles > 0 and filledCount < maxTiles then
                         if filledCount == 0 or _G.LastPnBState == "Placing" then
                             _G.LastPnBState = "Placing"
                             if getActiveAmount() > 0 then
                                 for _, tile in ipairs(areaData) do
-                                    -- EMERGENCY CHECK di tengah perulangan pasang
-                                    if getgenv().SayzLatestRunID ~= MyRunID or not PnB.Master then break end
-                                    
-                                    if not tile.isFilled then
+                                    if not tile.isFilled and PnB.Master then
                                         game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
                                         task.wait(PnB.PlaceDelay)
                                     end
@@ -187,21 +193,14 @@ return function(SubTab, Window)
 
                     areaData, filledCount = getAreaInfo()
 
-                    -- [[ LOGIKA BREAK ]] --
+                    -- LOGIKA BREAK
                     if PnB.Break and filledCount > 0 then
                         if filledCount == maxTiles or _G.LastPnBState == "Breaking" or (not PnB.Place) then
                             _G.LastPnBState = "Breaking"
-                            
                             if PnB.BreakMode == "Mode 1 (Fokus)" then
                                 for _, tile in ipairs(areaData) do
-                                    -- EMERGENCY CHECK sebelum pindah ke blok berikutnya
-                                    if getgenv().SayzLatestRunID ~= MyRunID or not PnB.Master then break end
-                                    
                                     if tile.isFilled then
                                         while PnB.Master and PnB.Break do
-                                            -- EMERGENCY CHECK di tengah-tengah mukul (biar langsung berhenti)
-                                            if getgenv().SayzLatestRunID ~= MyRunID then break end
-                                            
                                             local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
                                             if check == nil then break end 
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
@@ -211,11 +210,8 @@ return function(SubTab, Window)
                                 end
                             else -- Mode Sweep
                                 while filledCount > 0 and PnB.Master and PnB.Break do
-                                    -- EMERGENCY CHECK di tengah perulangan sweep
-                                    if getgenv().SayzLatestRunID ~= MyRunID then break end
-                                    
                                     for _, tile in ipairs(areaData) do
-                                        if tile.isFilled and getgenv().SayzLatestRunID == MyRunID then
+                                        if tile.isFilled then
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
                                             task.wait(0.02)
                                         end
@@ -223,7 +219,6 @@ return function(SubTab, Window)
                                     areaData, filledCount = getAreaInfo()
                                 end
                             end
-                            
                             if filledCount == 0 then
                                 _G.LastPnBState = "Waiting"
                                 task.wait(PnB.ActualDelay)
@@ -237,7 +232,3 @@ return function(SubTab, Window)
         end
     end)
 end
-
-
-
-
