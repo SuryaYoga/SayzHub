@@ -1161,6 +1161,12 @@ function SayzUI:CreateWindow(opts)
 			            Parent = card
 			        })
 			        corner(dropBtn, 8)
+					task.defer(function()
+			            if dropBtn then
+			                dropBtn.Text = "Select Items... ▼"
+			                dropBtn.TextColor3 = Theme.Text
+			            end
+			        end)
 			
 			        local listContainer = mk("ScrollingFrame", {
 			            Visible = false,
