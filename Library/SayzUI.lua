@@ -924,7 +924,7 @@ function SayzUI:CreateWindow(opts)
 					TextSize = 13,
 					TextXAlignment = Enum.TextXAlignment.Left,
 					TextColor3 = Theme.Text,
-					Text = "   " .. sub.Name,
+					Text = "    " .. sub.Name,
 					AutoButtonColor = false,
 					Parent = subTabsHolder
 				})
@@ -1047,31 +1047,31 @@ function SayzUI:CreateWindow(opts)
 			end
 
 			function sub:AddLabel(text)
-    			local labelTable = {} -- Tabel untuk menyimpan fungsi update
-    			local labelInstance = nil -- Tempat menyimpan objek TextLabel
+                local labelTable = {} -- Tabel untuk menyimpan fungsi update
+                local labelInstance = nil -- Tempat menyimpan objek TextLabel
 
-    			table.insert(sub._items, function()
-        			labelInstance = mk("TextLabel", {
-            			BackgroundTransparency = 1,
-            			Size = UDim2.new(1, 0, 0, 18),
-            			Font = Enum.Font.Gotham,
-            			TextSize = 13,
-            			TextXAlignment = Enum.TextXAlignment.Left,
-            			TextColor3 = Theme.Muted,
-            			Text = tostring(text),
-            			Parent = contentArea
-        			})
-    			end)
+                table.insert(sub._items, function()
+                    labelInstance = mk("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 0, 18),
+                        Font = Enum.Font.Gotham,
+                        TextSize = 13,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextColor3 = Theme.Muted,
+                        Text = tostring(text),
+                        Parent = contentArea
+                    })
+                end)
 
-    			-- Tambahkan fungsi SetText agar bisa dipanggil dari luar
-    			function labelTable:SetText(newText)
-        			if labelInstance then
-            			labelInstance.Text = tostring(newText)
-        			end
-    			end
+                -- Tambahkan fungsi SetText agar bisa dipanggil dari luar
+                function labelTable:SetText(newText)
+                    if labelInstance then
+                        labelInstance.Text = tostring(newText)
+                    end
+                end
 
-    			return labelTable -- Kembalikan tabel fungsinya, bukan 'sub'
-			end
+                return labelTable -- Kembalikan tabel fungsinya, bukan 'sub'
+            end
 
 			function sub:AddParagraph(titleText, bodyText)
 				table.insert(sub._items, function()
@@ -1127,235 +1127,227 @@ function SayzUI:CreateWindow(opts)
 			end
 
 			-- ===== Multi-Select Dropdown (Fixed for Reset & ZIndex) =====
-			function sub:AddMultiDropdown(text, listItems, callback)
-			    listItems = listItems or {}
-			    local handle = { _items = listItems, Selected = {}, _rebuild = nil }
-			    local TempItems = {}
-			    local dropBtn -- Didefinisikan di luar agar bisa diakses handle:Set
-			
-			    table.insert(sub._items, function()
-			        local open = false
-			        local card = rowCard()
-					-- Agar tidak tertutup UI game, pastikan ScreenGui induk memiliki DisplayOrder tinggi
-			        card.ZIndex = 1000
-			         
-			
-			        mk("TextLabel", {
-			            BackgroundTransparency = 1,
-			            Size = UDim2.new(0.4, 0, 1, 0),
-			            Font = Enum.Font.GothamSemibold,
-			            TextSize = 13,
-			            TextColor3 = Theme.Text,
-			            TextXAlignment = Enum.TextXAlignment.Left,
-			            Text = tostring(text),
-			            Parent = card
-			        })
-			
-			        dropBtn = mk("TextButton", {
-			            BackgroundColor3 = Theme.Button,
-			            Position = UDim2.new(0.45, 0, 0, 0),
-			            Size = UDim2.new(0.55, 0, 1, 0),
-			            Font = Enum.Font.Gotham,
-			            TextSize = 12,
-			            TextColor3 = Theme.Text,
-			            Text = "Select Items... ▼",
-			            Parent = card
-			        })
-			        corner(dropBtn, 8)
-					task.defer(function()
-			            if dropBtn then
-			                dropBtn.Text = "Select Items... ▼"
-			                dropBtn.TextColor3 = Theme.Text
-			            end
-			        end)
-			
-			        local listContainer = mk("ScrollingFrame", {
-			            Visible = false,
-			            BackgroundColor3 = Theme.Panel,
-			            Position = UDim2.new(0, 0, 1, 4),
-			            Size = UDim2.new(1, 0, 0, 150),
-			            ZIndex = 1000, -- NAIKKAN SANGAT TINGGI agar di depan hotbar
-			            ScrollBarThickness = 4,
-			            BorderSizePixel = 0,
-			            Parent = dropBtn
-			        })
-			        corner(listContainer, 8)
-			        list(listContainer, Enum.FillDirection.Vertical, 2)
-			        padding(listContainer, 4, 4, 4, 4)
-			
-			        local function rebuild()
-			            for _, ch in ipairs(listContainer:GetChildren()) do
-			                if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
-			            end
-			
-			            local header = mk("Frame", {
-			                Size = UDim2.new(1, 0, 0, 25),
-			                BackgroundTransparency = 1,
-			                ZIndex = 1001,
-			                Parent = listContainer
-			            })
-			            
-			            local cancel = mk("TextButton", {
-			                Size = UDim2.new(0, 22, 0, 22),
-			                Position = UDim2.new(0, 2, 0, 0),
-			                BackgroundColor3 = Color3.fromRGB(231, 76, 60),
-			                Text = "✕",
-			                TextColor3 = Color3.new(1,1,1),
-			                Font = Enum.Font.GothamBold,
-			                ZIndex = 1002,
-			                Parent = header
-			            })
-			            corner(cancel, 6)
-			
-			            local save = mk("TextButton", {
-			                Size = UDim2.new(0, 22, 0, 22),
-			                Position = UDim2.new(1, -24, 0, 0),
-			                BackgroundColor3 = Color3.fromRGB(46, 204, 113),
-			                Text = "✓",
-			                TextColor3 = Color3.new(1,1,1),
-			                Font = Enum.Font.GothamBold,
-			                ZIndex = 1002,
-			                Parent = header
-			            })
-			            corner(save, 6)
-			
-			            save.MouseButton1Click:Connect(function()
-			                handle.Selected = {}
-			                local count = 0
-			                for k, v in pairs(TempItems) do 
-			                    handle.Selected[k] = v 
-			                    count = count + 1
-			                end
-			                dropBtn.Text = (count > 0 and count .. " Selected ▼") or "Select Items... ▼"
-			                open = false; listContainer.Visible = false; card.ZIndex = 1
-			                if callback then callback(handle.Selected) end
-			            end)
-			
-			            cancel.MouseButton1Click:Connect(function()
-			                open = false; listContainer.Visible = false; card.ZIndex = 1
-			            end)
-			
-			            for _, val in ipairs(handle._items) do
-			                local valStr = tostring(val)
-			                local isSel = TempItems[valStr]
-			                local itemBtn = mk("TextButton", {
-			                    BackgroundColor3 = isSel and Theme.Accent or Theme.Button,
-			                    Size = UDim2.new(1, -8, 0, 28),
-			                    Text = "  " .. valStr,
-			                    TextColor3 = isSel and Color3.new(1,1,1) or Theme.Text,
-			                    TextXAlignment = Enum.TextXAlignment.Left,
-			                    Font = Enum.Font.Gotham,
-			                    TextSize = 11,
-			                    ZIndex = 1001,
-			                    Parent = listContainer
-			                })
-			                corner(itemBtn, 4)
-			                itemBtn.MouseButton1Click:Connect(function()
-			                    TempItems[valStr] = not TempItems[valStr] and true or nil
-			                    rebuild()
-			                end)
-			            end
-			            listContainer.CanvasSize = UDim2.new(0,0,0, (#handle._items * 30) + 40)
-			        end
-			
-			        handle._rebuild = rebuild
-			        
-			        -- FUNGSI RESET TERBARU
-			        function handle:Set(targetTable)
-			            handle.Selected = targetTable or {}
-			            TempItems = {}
-			            for k, v in pairs(handle.Selected) do TempItems[k] = v end
-			            
-			            local count = 0
-			            for _ in pairs(handle.Selected) do count = count + 1 end
-			            
-			            if dropBtn then
-			                dropBtn.Text = (count > 0 and count .. " Selected ▼") or "Select Items... ▼"
-			            end
-			            if open then rebuild() end
-			        end
-			
-			        dropBtn.MouseButton1Click:Connect(function()
-			            open = not open
-			            listContainer.Visible = open
-			            if open then
-			                card.ZIndex = 500 -- Card naik saat terbuka agar list di atas elemen lain
-			                TempItems = {}
-			                for k, v in pairs(handle.Selected) do TempItems[k] = v end
-			                rebuild()
-			            else 
-			                card.ZIndex = 1001 
-			            end
-			        end)
-			    end)
-			
-			    function handle:UpdateList(newList)
-			        handle._items = newList or {}
-			        if handle._rebuild then handle._rebuild() end
-			    end
-			
-			    return handle
-			end
+            function sub:AddMultiDropdown(text, listItems, callback)
+                listItems = listItems or {}
+                local handle = { _items = listItems, Selected = {}, _rebuild = nil }
+                local TempItems = {}
+                local dropBtn -- Didefinisikan di luar agar bisa diakses handle:Set
+            
+                table.insert(sub._items, function()
+                    local open = false
+                    local card = rowCard()
+                    card.ClipsDescendants = false -- FIXED: Agar list tidak terpotong
+                    card.ZIndex = 1
+                    
+                    mk("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(0.4, 0, 1, 0),
+                        Font = Enum.Font.GothamSemibold,
+                        TextSize = 13,
+                        TextColor3 = Theme.Text,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        Text = tostring(text),
+                        Parent = card
+                    })
+            
+                    dropBtn = mk("TextButton", {
+                        BackgroundColor3 = Theme.Button,
+                        Position = UDim2.new(0.45, 0, 0, 0),
+                        Size = UDim2.new(0.55, 0, 1, 0),
+                        Font = Enum.Font.Gotham,
+                        TextSize = 12,
+                        TextColor3 = Theme.Text,
+                        Text = "Select Items... ▼",
+                        Parent = card
+                    })
+                    corner(dropBtn, 8)
+            
+                    local listContainer = mk("ScrollingFrame", {
+                        Visible = false,
+                        BackgroundColor3 = Theme.Panel,
+                        Position = UDim2.new(0, 0, 1, 4),
+                        Size = UDim2.new(1, 0, 0, 150),
+                        ZIndex = 1000, 
+                        ScrollBarThickness = 4,
+                        BorderSizePixel = 0,
+                        Parent = dropBtn
+                    })
+                    corner(listContainer, 8)
+                    list(listContainer, Enum.FillDirection.Vertical, 2)
+                    padding(listContainer, 4, 4, 4, 4)
+            
+                    local function rebuild()
+                        for _, ch in ipairs(listContainer:GetChildren()) do
+                            if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
+                        end
+            
+                        local header = mk("Frame", {
+                            Size = UDim2.new(1, 0, 0, 25),
+                            BackgroundTransparency = 1,
+                            ZIndex = 1001,
+                            Parent = listContainer
+                        })
+                        
+                        local cancel = mk("TextButton", {
+                            Size = UDim2.new(0, 22, 0, 22),
+                            Position = UDim2.new(0, 2, 0, 0),
+                            BackgroundColor3 = Color3.fromRGB(231, 76, 60),
+                            Text = "✕",
+                            TextColor3 = Color3.new(1,1,1),
+                            Font = Enum.Font.GothamBold,
+                            ZIndex = 1002,
+                            Parent = header
+                        })
+                        corner(cancel, 6)
+            
+                        local save = mk("TextButton", {
+                            Size = UDim2.new(0, 22, 0, 22),
+                            Position = UDim2.new(1, -24, 0, 0),
+                            BackgroundColor3 = Color3.fromRGB(46, 204, 113),
+                            Text = "✓",
+                            TextColor3 = Color3.new(1,1,1),
+                            Font = Enum.Font.GothamBold,
+                            ZIndex = 1002,
+                            Parent = header
+                        })
+                        corner(save, 6)
+            
+                        save.MouseButton1Click:Connect(function()
+                            handle.Selected = {}
+                            local count = 0
+                            for k, v in pairs(TempItems) do 
+                                handle.Selected[k] = v 
+                                count = count + 1
+                            end
+                            dropBtn.Text = (count > 0 and count .. " Selected ▼") or "Select Items... ▼"
+                            open = false; listContainer.Visible = false; card.ZIndex = 1
+                            if callback then callback(handle.Selected) end
+                        end)
+            
+                        cancel.MouseButton1Click:Connect(function()
+                            open = false; listContainer.Visible = false; card.ZIndex = 1
+                        end)
+            
+                        for _, val in ipairs(handle._items) do
+                            local valStr = tostring(val)
+                            local isSel = TempItems[valStr]
+                            local itemBtn = mk("TextButton", {
+                                BackgroundColor3 = isSel and Theme.Accent or Theme.Button,
+                                Size = UDim2.new(1, -8, 0, 28),
+                                Text = "  " .. valStr,
+                                TextColor3 = isSel and Color3.new(1,1,1) or Theme.Text,
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                Font = Enum.Font.Gotham,
+                                TextSize = 11,
+                                ZIndex = 1001,
+                                Parent = listContainer
+                            })
+                            corner(itemBtn, 4)
+                            itemBtn.MouseButton1Click:Connect(function()
+                                TempItems[valStr] = not TempItems[valStr] and true or nil
+                                rebuild()
+                            end)
+                        end
+                        listContainer.CanvasSize = UDim2.new(0,0,0, (#handle._items * 30) + 40)
+                    end
+            
+                    handle._rebuild = rebuild
+                    
+                    function handle:Set(targetTable)
+                        handle.Selected = targetTable or {}
+                        TempItems = {}
+                        for k, v in pairs(handle.Selected) do TempItems[k] = v end
+                        
+                        local count = 0
+                        for _ in pairs(handle.Selected) do count = count + 1 end
+                        
+                        if dropBtn then
+                            dropBtn.Text = (count > 0 and count .. " Selected ▼") or "Select Items... ▼"
+                        end
+                        if open then rebuild() end
+                    end
+            
+                    dropBtn.MouseButton1Click:Connect(function()
+                        open = not open
+                        listContainer.Visible = open
+                        if open then
+                            card.ZIndex = 1000 -- FIXED: Card naik sangat tinggi saat buka
+                            TempItems = {}
+                            for k, v in pairs(handle.Selected) do TempItems[k] = v end
+                            rebuild()
+                        else 
+                            card.ZIndex = 1 -- FIXED: Kembali ke 1 saat tutup
+                        end
+                    end)
+                end)
+            
+                function handle:UpdateList(newList)
+                    handle._items = newList or {}
+                    if handle._rebuild then handle._rebuild() end
+                end
+            
+                return handle
+            end
 
 			-- atur grid
 
 			function sub:AddGridSelector(callback)
-    			table.insert(sub._items, function()
-        			local GridContainer = Instance.new("Frame")
-        			local UIGridLayout = Instance.new("UIGridLayout")
+                table.insert(sub._items, function()
+                    local GridContainer = Instance.new("Frame")
+                    local UIGridLayout = Instance.new("UIGridLayout")
 
-        			GridContainer.Name = "GridContainer"
-        			GridContainer.Parent = contentArea
-        			GridContainer.BackgroundTransparency = 1
-        			-- Sesuaikan lebar agar pas dengan 5 kolom
-        			GridContainer.Size = UDim2.new(0, 240, 0, 240) 
-        			-- Posisikan di tengah agar cantik
-        			GridContainer.Position = UDim2.new(0.5, -120, 0, 0) 
+                    GridContainer.Name = "GridContainer"
+                    GridContainer.Parent = contentArea
+                    GridContainer.BackgroundTransparency = 1
+                    -- Sesuaikan lebar agar pas dengan 5 kolom
+                    GridContainer.Size = UDim2.new(0, 240, 0, 240) 
+                    -- Posisikan di tengah agar cantik
+                    GridContainer.Position = UDim2.new(0.5, -120, 0, 0) 
 
-        			UIGridLayout.Parent = GridContainer
-        			UIGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        			UIGridLayout.FillDirection = Enum.FillDirection.Horizontal
-        			-- KUNCI UTAMA: Batasi hanya 5 kotak per baris
-        			UIGridLayout.FillDirectionMaxCells = 5 
-        			UIGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
-        			UIGridLayout.CellSize = UDim2.new(0, 42, 0, 42)
-        			UIGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                    UIGridLayout.Parent = GridContainer
+                    UIGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                    UIGridLayout.FillDirection = Enum.FillDirection.Horizontal
+                    -- KUNCI UTAMA: Batasi hanya 5 kotak per baris
+                    UIGridLayout.FillDirectionMaxCells = 5 
+                    UIGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+                    UIGridLayout.CellSize = UDim2.new(0, 42, 0, 42)
+                    UIGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
-        			local selectedTiles = {}
+                    local selectedTiles = {}
 
-        			-- Loop untuk membuat 25 kotak
-        			for y = 2, -2, -1 do
-            			for x = -2, 2 do
-                			local coord = x .. "," .. y
-                			local TileBtn = Instance.new("TextButton")
-                			TileBtn.Parent = GridContainer
-                			-- Urutan Layout agar tidak berantakan
-                			TileBtn.LayoutOrder = (2-y)*5 + (x+2) 
-                			TileBtn.Text = (x == 0 and y == 0) and "P" or "" 
-                			TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-                			TileBtn.BorderSizePixel = 0
-                
-                			local UICorner = Instance.new("UICorner")
-                			UICorner.CornerRadius = UDim.new(0, 6)
-                			UICorner.Parent = TileBtn
+                    -- Loop untuk membuat 25 kotak
+                    for y = 2, -2, -1 do
+                        for x = -2, 2 do
+                            local coord = x .. "," .. y
+                            local TileBtn = Instance.new("TextButton")
+                            TileBtn.Parent = GridContainer
+                            -- Urutan Layout agar tidak berantakan
+                            TileBtn.LayoutOrder = (2-y)*5 + (x+2) 
+                            TileBtn.Text = (x == 0 and y == 0) and "P" or "" 
+                            TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+                            TileBtn.BorderSizePixel = 0
+                        
+                            local UICorner = Instance.new("UICorner")
+                            UICorner.CornerRadius = UDim.new(0, 6)
+                            UICorner.Parent = TileBtn
 
-                			janitor:Add(TileBtn.MouseButton1Click:Connect(function()
-                    			if x == 0 and y == 0 then return end
-                    
-                    			if selectedTiles[coord] then
-                        			selectedTiles[coord] = nil
-                        			TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-                    			else
-                        			selectedTiles[coord] = true
-                        			TileBtn.BackgroundColor3 = Color3.fromRGB(52, 152, 219)
-                    			end
-                    			safeCall(callback, selectedTiles)
-                			end))
-            			end
-        			end
-    			end)
-    			return sub
-			end
+                            janitor:Add(TileBtn.MouseButton1Click:Connect(function()
+                                if x == 0 and y == 0 then return end
+                            
+                                if selectedTiles[coord] then
+                                    selectedTiles[coord] = nil
+                                    TileBtn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+                                else
+                                    selectedTiles[coord] = true
+                                    TileBtn.BackgroundColor3 = Color3.fromRGB(52, 152, 219)
+                                end
+                                safeCall(callback, selectedTiles)
+                            end))
+                        end
+                    end
+                end)
+                return sub
+            end
 
 			-- ===== Input (with Get/Set handle) =====
 			function sub:AddInput(text, placeholder, callback, defaultText)
@@ -1600,7 +1592,7 @@ function SayzUI:CreateWindow(opts)
 				table.insert(sub._items, function()
 					local open = false
 					local card = rowCard()
-					card.ClipsDescendants = false
+					card.ClipsDescendants = false -- FIXED: Agar list tidak terpotong
 					card.ZIndex = 1
 
 					mk("TextLabel", {
@@ -1671,7 +1663,7 @@ function SayzUI:CreateWindow(opts)
 							janitor:Add(itemBtn.MouseButton1Click:Connect(function()
 								open = false
 								listContainer.Visible = false
-								card.ZIndex = 1
+								card.ZIndex = 1 -- FIXED
 
 								handle:Set(val, false)
 							end))
@@ -1698,10 +1690,10 @@ function SayzUI:CreateWindow(opts)
 						open = not open
 						listContainer.Visible = open
 						if open then
-							card.ZIndex = 100
+							card.ZIndex = 1000 -- FIXED: Card naik sangat tinggi saat buka
 							rebuild()
 						else
-							card.ZIndex = 1
+							card.ZIndex = 1 -- FIXED: Kembali ke 1 saat tutup
 						end
 					end))
 
@@ -1744,7 +1736,7 @@ function SayzUI:CreateWindow(opts)
 
 		-- auto select first tab if none active
 		if not Window._activeMain then
-    		setActiveMain()
+            setActiveMain()
 		end
 
 		return tab
