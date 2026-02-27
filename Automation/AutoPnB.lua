@@ -1,8 +1,8 @@
 return function(SubTab, Window, myToken)
     -- ========================================
-    -- [1] VARIABEL & SETUP (SINKRONISASI TOKEN)
+    -- [1] VARIABEL & SETUP
     -- ========================================
-    -- Mengambil data dari Main Table SayzSettings agar sinkron
+    -- Mengambil data dari Main Table SayzSettings
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
@@ -26,11 +26,11 @@ return function(SubTab, Window, myToken)
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    -- Slider v3.1 Support (Menambahkan parameter 1 untuk desimal)
-    getgenv().SayzUI_Handles["PnB_Speed"] = SubTab:AddSlider("Speed Scale (Min 0.1)", 0.1, 5.0, PnB.DelayScale, function(v)
+    -- Slider Speed Scale (Tanpa parameter desimal biar ga ngerusak perkalian)
+    getgenv().SayzUI_Handles["PnB_Speed"] = SubTab:AddSlider("Speed Scale (Min 1)", 1, 10, PnB.DelayScale or 1, function(v)
         PnB.DelayScale = v
         PnB.ActualDelay = v * 0.12
-    end, 1)
+    end)
 
     SubTab:AddSection("GRID TARGET (5x5)")
     SubTab:AddGridSelector(function(selectedTable)
@@ -68,7 +68,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [3] FUNCTIONS HELPER
+    -- [3] FUNCTIONS HELPER (LOGIKA ASLI KAMU)
     -- ========================================
     local function getActiveAmount()
         local total = 0
@@ -78,7 +78,6 @@ return function(SubTab, Window, myToken)
         
         if success and invModule and invModule.Stacks then
             local targetIndex = tonumber(PnB.TargetID)
-            if not targetIndex then return 0 end
             local baseStack = invModule.Stacks[targetIndex]
             if baseStack and baseStack.Id then
                 local targetItemId = baseStack.Id
@@ -100,7 +99,7 @@ return function(SubTab, Window, myToken)
         end)
     end
 
-    -- Hook Metamethod untuk Scanner (Diberi pelindung Token)
+    -- Hook Metamethod untuk Scanner
     if not _G.OldHookSet then
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -127,7 +126,6 @@ return function(SubTab, Window, myToken)
                     local root = char and char:FindFirstChild("HumanoidRootPart")
                     if not root then return end
 
-                    -- Tentukan Base Grid
                     local baseGrid
                     if PnB.LockPosition and PnB.OriginGrid then
                         baseGrid = PnB.OriginGrid
@@ -139,25 +137,20 @@ return function(SubTab, Window, myToken)
                         PnB.OriginGrid = baseGrid
                     end
 
-                    -- Ambil data target dari Grid Selector
                     local function getAreaInfo()
                         local targets = {}
                         local currentFilled = 0
                         local selectedList = {}
-
                         for coordKey, active in pairs(PnB.SelectedTiles) do
                             if active then
                                 local parts = string.split(coordKey, ",")
                                 table.insert(selectedList, {ox = tonumber(parts[1]), oy = tonumber(parts[2])})
                             end
                         end
-
-                        -- Sortir biar rapi urutan pasang/hancurnya
                         table.sort(selectedList, function(a, b)
                             if a.oy ~= b.oy then return a.oy > b.oy end
                             return a.ox < b.ox
                         end)
-
                         for _, offset in ipairs(selectedList) do
                             local tx = baseGrid.x + offset.ox
                             local ty = baseGrid.y + offset.oy
@@ -165,7 +158,6 @@ return function(SubTab, Window, myToken)
                             local blockExist = tileData and tileData[1] ~= nil
                             local wallExist = tileData and tileData[2] ~= nil
                             local isFilled = blockExist or wallExist
-                            
                             table.insert(targets, {
                                 pos = Vector2.new(tx, ty), 
                                 isFilled = isFilled,
@@ -238,6 +230,5 @@ return function(SubTab, Window, myToken)
             updatePnBVisuals()
             task.wait(0.01)
         end
-        print("PnB: Loop terminated safely.")
     end)
 end
