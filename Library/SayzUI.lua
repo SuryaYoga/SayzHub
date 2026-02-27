@@ -12,6 +12,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+
 local SayzUI = {}
 SayzUI.__index = SayzUI
 
@@ -195,6 +196,7 @@ function SayzUI:CreateWindow(opts)
 	-- ScreenGui
 	local gui = mk("ScreenGui", {
 		Name = guiName,
+		DisplayOrder = 999
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		Parent = pgui,
@@ -1135,7 +1137,7 @@ function SayzUI:CreateWindow(opts)
 			        local open = false
 			        local card = rowCard()
 			        -- Agar tidak tertutup UI game, pastikan ScreenGui induk memiliki DisplayOrder tinggi
-			        card.ZIndex = 1 
+			        card.ZIndex = 1000 
 			
 			        mk("TextLabel", {
 			            BackgroundTransparency = 1,
