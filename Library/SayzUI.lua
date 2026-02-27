@@ -1137,7 +1137,7 @@ function SayzUI:CreateWindow(opts)
 			        local open = false
 			        local card = rowCard()
 			        -- Agar tidak tertutup UI game, pastikan ScreenGui induk memiliki DisplayOrder tinggi
-			        card.ZIndex = 1000 
+			        card.ZIndex = 1100 
 			
 			        mk("TextLabel", {
 			            BackgroundTransparency = 1,
