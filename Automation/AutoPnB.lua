@@ -1,7 +1,5 @@
 return function(SubTab, Window, myToken)
-    -- ========================================
-    -- [1] VARIABEL & SETUP (SINKRON DENGAN TOKEN)
-    -- ========================================
+    -- [[ 1. SETUP & VARIABLES ]] --
     local PnB = getgenv().SayzSettings.PnB 
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(game.Players.LocalPlayer.PlayerScripts.PlayerMovement)
@@ -9,16 +7,13 @@ return function(SubTab, Window, myToken)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
     
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local doorDatabase, lockedDoors, badItems = {}, {}, {}
+    local lockedDoors = {}
     _G.LastPnBState = "Waiting" 
 
-    -- ========================================
-    -- [2] PATHFINDING CORE (100% SESUAI AUTOCOLLECT)
-    -- ========================================
+    -- [[ 2. PATHFINDING CORE ]] --
     local function isWalkable(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false, false end
         if lockedDoors[gx .. "," .. gy] then return false, false end 
-
         if WorldTiles[gx] and WorldTiles[gx][gy] then
             local l1 = WorldTiles[gx][gy][1]
             local itemName = (type(l1) == "table") and l1[1] or l1
@@ -45,8 +40,7 @@ return function(SubTab, Window, myToken)
             if current.x == targetX and current.y == targetY then return current.path end
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
-                local walkable = isWalkable(nx, ny)
-                if walkable then
+                if isWalkable(nx, ny) then
                     local newTotalCost = current.cost + 1
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
@@ -60,9 +54,7 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- ========================================
-    -- [3] UI ELEMENTS (LENGKAP SEMUA FITUR)
-    -- ========================================
+    -- [[ 3. UI ELEMENTS ]] --
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
     getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
@@ -70,7 +62,7 @@ return function(SubTab, Window, myToken)
     getgenv().SayzUI_Handles["PnB_SmartCollect"] = SubTab:AddToggle("Walk to Collect (Grid)", PnB.AutoCollectInGrid, function(t) PnB.AutoCollectInGrid = t end)
 
     SubTab:AddSection("SCANNER")
-    SubTab:AddButton("Scan ID Item", function() PnB.Scanning = true; Window:Notify("Pasang 1 blok!", 3) end)
+    SubTab:AddButton("Scan ID Item", function() PnB.Scanning = true; Window:Notify("Pasang 1 blok manual!", 3) end)
     local InfoLabel = SubTab:AddLabel("ID Aktif: None")
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
@@ -84,7 +76,7 @@ return function(SubTab, Window, myToken)
     getgenv().SayzUI_Handles["PnB_LockPosition"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) PnB.LockPosition = t end)
     getgenv().SayzUI_Handles["PnB_BreakMode"] = SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v) PnB.BreakMode = v end)
 
-    SubTab:AddSection("GRID TARGET (5x5)")
+    SubTab:AddSection("GRID TARGET")
     SubTab:AddGridSelector(function(selectedTable)
         PnB.SelectedTiles = selectedTable
         local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -93,9 +85,7 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- ========================================
-    -- [4] FUNCTIONS HELPER (LOGIKA ASLI)
-    -- ========================================
+    -- [[ 4. HELPERS ]] --
     local function getActiveAmount()
         local total = 0
         local success, invModule = pcall(function() return require(game.ReplicatedStorage.Modules.Inventory) end)
@@ -143,9 +133,7 @@ return function(SubTab, Window, myToken)
         _G.OldHookSet = true
     end
 
-    -- ========================================
-    -- [5] MAIN TASK LOOP
-    -- ========================================
+    -- [[ 5. MAIN TASK LOOP ]] --
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             if PnB.Master then
@@ -157,7 +145,7 @@ return function(SubTab, Window, myToken)
 
                     local baseGrid = (PnB.LockPosition and PnB.OriginGrid) or { x = math.floor(Hitbox.Position.X/4.5+0.5), y = math.floor(Hitbox.Position.Y/4.5+0.5) }
 
-                    -- GET AREA DATA
+                    -- Refresh Grid Data
                     local targets, currentFilled, selectedList = {}, 0, {}
                     for coordKey, active in pairs(PnB.SelectedTiles) do
                         if active then
@@ -170,11 +158,11 @@ return function(SubTab, Window, myToken)
                         local tx, ty = baseGrid.x + offset.ox, baseGrid.y + offset.oy
                         local tileData = WorldTiles[tx] and WorldTiles[tx][ty]
                         local blockExist = tileData and tileData[1] ~= nil
-                        table.insert(targets, {pos = Vector2.new(tx, ty), isFilled = blockExist, layer = 1})
+                        table.insert(targets, {pos = Vector2.new(tx, ty), isFilled = blockExist})
                         if blockExist then currentFilled = currentFilled + 1 end
                     end
 
-                    -- PHASE 1: BREAK
+                    -- 1. BREAK PHASE
                     if PnB.Break and currentFilled > 0 then
                         _G.LastPnBState = "Breaking"
                         for _, tile in ipairs(targets) do
@@ -184,13 +172,14 @@ return function(SubTab, Window, myToken)
                                     if _G.LatestRunToken ~= myToken then break end
                                     local check = WorldTiles[tile.pos.X] and WorldTiles[tile.pos.X][tile.pos.Y] and WorldTiles[tile.pos.X][tile.pos.Y][1]
                                     if check == nil then break end 
-                                    game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos); task.wait(0.035)
+                                    game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
+                                    task.wait(0.035)
                                 end
                             end
                         end
                     end
 
-                    -- PHASE 2: COLLECT (SMARTPATH)
+                    -- 2. SMART COLLECT PHASE (Normal Speed)
                     local drops = GetDropsInGrid(targets)
                     if PnB.AutoCollectInGrid and PnB.Master and #drops > 0 then
                         _G.LastPnBState = "Collecting"
@@ -203,31 +192,37 @@ return function(SubTab, Window, myToken)
                                 if path then
                                     for _, pt in ipairs(path) do
                                         Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
-                                        movementModule.Position = Hitbox.Position; task.wait(getgenv().StepDelay or 0.05)
+                                        movementModule.Position = Hitbox.Position
+                                        -- Menggunakan StepDelay agar kecepatan sama dengan AutoCollect biasa
+                                        task.wait(getgenv().StepDelay or 0.05)
                                     end
                                 end
                             end
                         end
-                        -- BACK TO ORIGIN
+                        -- Balik ke Origin (Kecepatan Normal)
                         local curX, curY = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local back = findSmartPath(curX, curY, baseGrid.x, baseGrid.y)
                         if back then
                             for _, pt in ipairs(back) do
                                 Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
-                                movementModule.Position = Hitbox.Position; task.wait(getgenv().StepDelay or 0.05)
+                                movementModule.Position = Hitbox.Position
+                                task.wait(getgenv().StepDelay or 0.05)
                             end
                         end
                     end
 
-                    -- PHASE 3: PLACE
-                    local dropsNow = #GetDropsInGrid(targets)
-                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and dropsNow == 0)
+                    -- 3. PLACE PHASE
+                    areaData, filledCount = getAreaInfo() -- Cek ulang setelah jalan-jalan
+                    local dropsLeft = #GetDropsInGrid(targets)
+                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and dropsLeft == 0)
+
                     if PnB.Place and currentFilled < #targets and canPlace then
                         _G.LastPnBState = "Placing"
                         for _, tile in ipairs(targets) do
                             if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                             if not tile.isFilled then
-                                game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1); task.wait(0.05)
+                                game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
+                                task.wait(0.05)
                             end
                         end
                     end
