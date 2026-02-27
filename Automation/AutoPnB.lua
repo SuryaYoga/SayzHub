@@ -1,16 +1,22 @@
 return function(SubTab, Window)
     -- ========================================
-    -- [1] VARIABEL & SETUP
+    -- [1] VARIABEL & SETUP (DIPERBAIKI)
     -- ========================================
-    local PnB = getgenv().PnBSettings -- Ambil data dari Main.lua
+    -- Harus merujuk ke SayzSettings agar tidak NIL
+    local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
     
-    -- Variabel internal untuk status transisi
     _G.LastPnBState = "Waiting" 
 
+    -- Cek darurat: Jika PnB masih nil karena main.lua belum siap
+    if not PnB then
+        SubTab:AddLabel("Error: Data PnB tidak ditemukan!")
+        return
+    end
+
     -- ========================================
-    -- [2] UI ELEMENTS (Ditaruh di Atas)
+    -- [2] UI ELEMENTS
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
     SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
@@ -22,11 +28,11 @@ return function(SubTab, Window)
         PnB.Scanning = true
         Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
     end)
-    local InfoLabel = SubTab:AddLabel("ID Aktif: None")
+    local InfoLabel = SubTab:AddLabel("ID Aktif: " .. tostring(PnB.TargetID or "None"))
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
+    SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale or 1), function(v)
         local val = tonumber(v) or 1
         if val < 0.1 then val = 0.1 end
         PnB.DelayScale = val
@@ -36,8 +42,6 @@ return function(SubTab, Window)
     SubTab:AddSection("GRID TARGET (5x5)")
     SubTab:AddGridSelector(function(selectedTable)
         PnB.SelectedTiles = selectedTable
-        
-        -- Auto-Set Origin saat memilih grid
         local char = LP.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
@@ -67,6 +71,7 @@ return function(SubTab, Window)
     SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
         PnB.BreakMode = v
     end)
+
 
     -- ========================================
     -- [3] FUNCTIONS HELPER
@@ -232,3 +237,4 @@ return function(SubTab, Window)
     end)
 
 end
+
