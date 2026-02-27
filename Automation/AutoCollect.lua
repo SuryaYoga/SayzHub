@@ -1,16 +1,18 @@
 return function(SubTab, Window)
     -- ========================================
-    -- [0] MEMORY CLEANER (Mencegah Auto-Load)
+    -- [0] MEMORY CLEANER (Satu-satunya tempat setting awal)
     -- ========================================
-    -- Kita paksa semua setting balik ke awal setiap kali script di-run
     getgenv().AutoCollect = false
     getgenv().TakeGems = true
+    getgenv().StepDelay = 0.05
     getgenv().ItemBlacklist = {}
     getgenv().AvoidanceStrength = 50
-    -- Reset variabel internal
+
+    -- Reset variabel internal lokal
     local lockedDoors = {}
     local badItems = {}
     local currentPool = {}
+    local doorDatabase = {}
 
     -- [[ 1. SETUP & VARIABLES ]] --
     local myToken = _G.LatestRunToken -- Token untuk Kill Switch
@@ -19,18 +21,7 @@ return function(SubTab, Window)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
-    -- Pengaturan Global
-    getgenv().AutoCollect = getgenv().AutoCollect or false
-    getgenv().TakeGems = getgenv().TakeGems or true 
-    getgenv().StepDelay = getgenv().StepDelay or 0.05 
-    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
-    getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
-
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local doorDatabase = {} 
-    local lockedDoors = {} 
-    local badItems = {} 
-    local currentPool = {} 
 
     -- [[ 2. CORE FUNCTIONS ]] --
 
@@ -311,5 +302,6 @@ return function(SubTab, Window)
         print("Auto Collect: Loop Terminated.")
     end)
 end
+
 
 
