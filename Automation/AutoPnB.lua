@@ -1,6 +1,6 @@
 return function(SubTab, Window, myToken)
     -- ========================================
-    -- [1] SETUP & SETTINGS
+    -- [1] VARIABEL & SETUP (ASLI 1:1)
     -- ========================================
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
@@ -9,18 +9,19 @@ return function(SubTab, Window, myToken)
     _G.LastPnBState = "Waiting" 
 
     -- ========================================
-    -- [2] UI ELEMENTS
+    -- [2] UI ELEMENTS (ASLI + SMART COLLECT)
     -- ========================================
-    SubTab:AddSection("EKSEKUSI UTAMA")
+    SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
     getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
     getgenv().SayzUI_Handles["PnB_Break"] = SubTab:AddToggle("Enable Break", PnB.Break, function(t) PnB.Break = t end)
     
-    getgenv().SayzUI_Handles["PnB_SmartCollect"] = SubTab:AddToggle("Smart Collect (Grid)", PnB.AutoCollectInGrid, function(t) 
+    -- Tambahan Toggle Smart Collect (Tanpa hapus yang lain)
+    getgenv().SayzUI_Handles["PnB_SmartCollect"] = SubTab:AddToggle("Smart Auto Collect (Grid)", PnB.AutoCollectInGrid, function(t) 
         PnB.AutoCollectInGrid = t 
     end)
 
-    SubTab:AddSection("SCANNER & INFO")
+    SubTab:AddSection("SCANNER")
     SubTab:AddButton("Scan ID Item", function()
         PnB.Scanning = true
         Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
@@ -28,28 +29,50 @@ return function(SubTab, Window, myToken)
     local InfoLabel = SubTab:AddLabel("ID Aktif: None")
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
-    -- ========================================
-    -- [3] HELPER FUNCTIONS
-    -- ========================================
-    local function GetDropsInGrid(areaData)
-        local drops = {}
-        for _, tile in ipairs(areaData) do
-            for _, folder in pairs({"Drops", "Gems"}) do
-                local container = workspace:FindFirstChild(folder)
-                if container then
-                    for _, item in pairs(container:GetChildren()) do
-                        local pos = item:GetPivot().Position
-                        local ix, iy = math.floor(pos.X/4.5+0.5), math.floor(pos.Y/4.5+0.5)
-                        if ix == tile.pos.X and iy == tile.pos.Y then
-                            table.insert(drops, item)
-                        end
-                    end
-                end
-            end
-        end
-        return drops
-    end
+    SubTab:AddSection("SETTING")
+    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
+        local val = tonumber(v) or 1
+        if val < 0.1 then val = 0.1 end
+        PnB.DelayScale = val
+        PnB.ActualDelay = val * 0.12
+    end)
 
+    SubTab:AddSection("GRID TARGET (5x5)")
+    SubTab:AddGridSelector(function(selectedTable)
+        PnB.SelectedTiles = selectedTable
+        local char = LP.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            PnB.OriginGrid = {
+                x = math.floor((root.Position.X / 4.475) + 0.5),
+                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+            }
+        end
+    end)
+
+    getgenv().SayzUI_Handles["PnB_LockPosition"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) 
+        PnB.LockPosition = t 
+    end)
+
+    SubTab:AddButton("Refresh Position / Set Origin", function()
+        local char = LP.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            PnB.OriginGrid = {
+                x = math.floor((root.Position.X / 4.475) + 0.5),
+                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+            }
+            Window:Notify("Position Refreshed!", 2, "ok")
+        end
+    end)
+
+    getgenv().SayzUI_Handles["PnB_BreakMode"] = SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
+        PnB.BreakMode = v
+    end)
+
+    -- ========================================
+    -- [3] FUNCTIONS HELPER (ASLI 1:1)
+    -- ========================================
     local function getActiveAmount()
         local total = 0
         local success, invModule = pcall(function() return require(game.ReplicatedStorage.Modules.Inventory) end)
@@ -58,22 +81,28 @@ return function(SubTab, Window, myToken)
             if targetIndex and invModule.Stacks[targetIndex] then
                 local targetItemId = invModule.Stacks[targetIndex].Id
                 for _, stack in pairs(invModule.Stacks) do
-                    if stack and stack.Id == targetItemId then
-                        total = total + (stack.Amount or 0)
-                    end
+                    if stack and stack.Id == targetItemId then total = total + (stack.Amount or 0) end
                 end
             end
         end
         return total
     end
 
-    -- Scanner Hook
+    local function updatePnBVisuals()
+        if _G.LatestRunToken ~= myToken then return end 
+        pcall(function()
+            InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
+            StokLabel:SetText("Total Stok: " .. getActiveAmount())
+        end)
+    end
+
+    -- Hook Metamethod (ASLI)
     if not _G.OldHookSet then
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
             local args = {...}
-            if PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
+            if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
                 PnB.TargetID = args[2]
                 PnB.Scanning = false
                 Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
@@ -83,8 +112,26 @@ return function(SubTab, Window, myToken)
         _G.OldHookSet = true
     end
 
+    -- [FUNGSI COLLECT DARI KODE ASLI ABANG]
+    local function GetDropsInGrid(areaData)
+        local drops = {}
+        for _, tile in ipairs(areaData) do
+            for _, folder in pairs({"Drops", "Gems"}) do
+                local container = workspace:FindFirstChild(folder)
+                if container then
+                    for _, item in pairs(container:GetChildren()) do
+                        local pos = item:GetPivot().Position
+                        local ix, iy = math.floor(pos.X/4.5+0.5), math.floor(pos.Y/4.5+0.5)
+                        if ix == tile.pos.X and iy == tile.pos.Y then table.insert(drops, item) end
+                    end
+                end
+            end
+        end
+        return drops
+    end
+
     -- ========================================
-    -- [4] DYNAMIC MAIN LOOP
+    -- [4] MAIN LOOP (INTEGRASI TANPA HAPUS)
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -115,8 +162,7 @@ return function(SubTab, Window, myToken)
                             local tx, ty = baseGrid.x + offset.ox, baseGrid.y + offset.oy
                             local tileData = worldData[tx] and worldData[tx][ty]
                             local blockExist = tileData and tileData[1] ~= nil
-                            local wallExist = tileData and tileData[2] ~= nil
-                            local isFilled = blockExist or wallExist
+                            local isFilled = blockExist or (tileData and tileData[2] ~= nil)
                             table.insert(targets, {pos = Vector2.new(tx, ty), isFilled = isFilled, layer = blockExist and 1 or 2})
                             if isFilled then currentFilled = currentFilled + 1 end
                         end
@@ -127,31 +173,43 @@ return function(SubTab, Window, myToken)
                     local maxTiles = #areaData
 
                     -- ----------------------------------------------------
-                    -- PRIORITAS 1: BREAK (Harus bersih dulu)
+                    -- TAHAP 1: BREAK (Sesuai Logika Abang)
                     -- ----------------------------------------------------
                     if PnB.Break and filledCount > 0 then
                         _G.LastPnBState = "Breaking"
-                        for _, tile in ipairs(areaData) do
-                            if _G.LatestRunToken ~= myToken or not PnB.Master then break end
-                            if tile.isFilled then
-                                while PnB.Master and PnB.Break do
-                                    if _G.LatestRunToken ~= myToken then break end
-                                    local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
-                                    if check == nil then break end 
-                                    game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
-                                    task.wait(0.035)
+                        if PnB.BreakMode == "Mode 1 (Fokus)" then
+                            for _, tile in ipairs(areaData) do
+                                if _G.LatestRunToken ~= myToken or not PnB.Master then break end
+                                if tile.isFilled then
+                                    while PnB.Master and PnB.Break do
+                                        if _G.LatestRunToken ~= myToken then break end
+                                        local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
+                                        if check == nil then break end 
+                                        game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
+                                        task.wait(0.035)
+                                    end
                                 end
+                            end
+                        else -- Mode Sweep
+                            while filledCount > 0 and PnB.Master and PnB.Break do
+                                if _G.LatestRunToken ~= myToken then break end
+                                for _, tile in ipairs(areaData) do
+                                    if _G.LatestRunToken ~= myToken then break end
+                                    if tile.isFilled then
+                                        game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos); task.wait(0.02)
+                                    end
+                                end
+                                areaData, filledCount = getAreaInfo()
                             end
                         end
                     end
 
                     -- ----------------------------------------------------
-                    -- PRIORITAS 2: SMART COLLECT (Jika aktif, harus ambil dulu)
+                    -- TAHAP 2: COLLECT (Logika Baru dari Abang)
                     -- ----------------------------------------------------
-                    areaData, filledCount = getAreaInfo() -- Refresh data
+                    areaData, filledCount = getAreaInfo() 
                     local drops = GetDropsInGrid(areaData)
-                    
-                    if PnB.AutoCollectInGrid and PnB.Master and #drops > 0 then
+                    if PnB.AutoCollectInGrid and PnB.Master and filledCount == 0 and #drops > 0 then
                         _G.LastPnBState = "Collecting"
                         local originalPos = root.CFrame
                         for _, item in ipairs(drops) do
@@ -166,15 +224,14 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ----------------------------------------------------
-                    -- PRIORITAS 3: PLACE (Hanya jika Break selesai & (Collect mati atau Barang habis))
+                    -- TAHAP 3: PLACE (Hanya jika Break & Collect selesai)
                     -- ----------------------------------------------------
-                    areaData, filledCount = getAreaInfo() -- Refresh lagi
-                    local dropsNow = GetDropsInGrid(areaData)
-                    
-                    -- Logika Cerdas: Boleh Place kalau (Auto Collect Mati) ATAU (Auto Collect Nyala dan Barang di Grid sudah 0)
-                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and #dropsNow == 0)
+                    areaData, filledCount = getAreaInfo()
+                    local finalDrops = GetDropsInGrid(areaData)
+                    -- Syarat Place: Collect Mati ATAU Barang Habis
+                    local canPlaceNow = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and #finalDrops == 0)
 
-                    if PnB.Place and filledCount < maxTiles and canPlace then
+                    if PnB.Place and filledCount < maxTiles and canPlaceNow then
                         _G.LastPnBState = "Placing"
                         if getActiveAmount() > 0 then
                             for _, tile in ipairs(areaData) do
@@ -187,15 +244,11 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    if filledCount == 0 and #dropsNow == 0 then _G.LastPnBState = "Waiting" end
+                    if filledCount == 0 and #finalDrops == 0 then _G.LastPnBState = "Waiting" end
                 end)
             end
-            
-            pcall(function()
-                InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
-                StokLabel:SetText("Total Stok: " .. getActiveAmount())
-            end)
-            task.wait(0.1)
+            updatePnBVisuals()
+            task.wait(0.01)
         end
     end)
 end
