@@ -132,10 +132,19 @@ return function(SubTab, Window)
     end)
 
     -- ========================================
-    -- [4] MAIN LOOP (EKSEKUSI)
+    -- [4] MAIN LOOP (DENGAN KILL SWITCH)
     -- ========================================
+    local MyRunID = getgenv().SayzLatestRunID -- Menangkap ID eksekusi saat ini
+
     task.spawn(function()
+        -- Loop hanya berjalan selama ID ini adalah yang terbaru & tabel setting masih ada
         while true do
+            -- CEK KILL SWITCH: Jika ID berubah atau UI di-close (SayzSettings jadi nil)
+            if getgenv().SayzLatestRunID ~= MyRunID or not getgenv().SayzSettings then
+                print("PnB: Loop lama dihentikan.")
+                break 
+            end
+
             if PnB.Master then
                 pcall(function()
                     local char = LP.Character
@@ -154,7 +163,7 @@ return function(SubTab, Window)
                         PnB.OriginGrid = baseGrid
                     end
 
-                    -- Ambil data target dari Grid Selector
+                    -- Fungsi Area Info
                     local function getAreaInfo()
                         local targets = {}
                         local currentFilled = 0
@@ -167,7 +176,6 @@ return function(SubTab, Window)
                             end
                         end
 
-                        -- Sortir biar rapi urutan pasang/hancurnya
                         table.sort(selectedList, function(a, b)
                             if a.oy ~= b.oy then return a.oy > b.oy end
                             return a.ox < b.ox
@@ -200,7 +208,8 @@ return function(SubTab, Window)
                             _G.LastPnBState = "Placing"
                             if getActiveAmount() > 0 then
                                 for _, tile in ipairs(areaData) do
-                                    if not tile.isFilled and PnB.Master then
+                                    -- Cek Master Switch lagi di tengah proses agar responsif saat dimatikan
+                                    if not tile.isFilled and PnB.Master and getgenv().SayzLatestRunID == MyRunID then
                                         game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
                                         task.wait(PnB.PlaceDelay)
                                     end
@@ -218,7 +227,7 @@ return function(SubTab, Window)
                             if PnB.BreakMode == "Mode 1 (Fokus)" then
                                 for _, tile in ipairs(areaData) do
                                     if tile.isFilled then
-                                        while PnB.Master and PnB.Break do
+                                        while PnB.Master and PnB.Break and getgenv().SayzLatestRunID == MyRunID do
                                             local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
                                             if check == nil then break end 
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
@@ -227,7 +236,7 @@ return function(SubTab, Window)
                                     end
                                 end
                             else -- Mode Sweep
-                                while filledCount > 0 and PnB.Master and PnB.Break do
+                                while filledCount > 0 and PnB.Master and PnB.Break and getgenv().SayzLatestRunID == MyRunID do
                                     for _, tile in ipairs(areaData) do
                                         if tile.isFilled then
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
@@ -249,7 +258,7 @@ return function(SubTab, Window)
             task.wait(0.01)
         end
     end)
-
 end
+
 
 
