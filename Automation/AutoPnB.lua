@@ -1,19 +1,33 @@
 return function(SubTab, Window)
     -- ========================================
-    -- [1] VARIABEL & SETUP (DIPERBAIKI)
+    -- [1] VARIABEL & SETUP (SINKRONISASI PUSAT)
     -- ========================================
-    -- Harus merujuk ke SayzSettings agar tidak NIL
+    
+    -- Cek apakah tabel utama ada, jika tidak ada buat tabel darurat agar tidak error
+    if not getgenv().SayzSettings then getgenv().SayzSettings = {} end
+    if not getgenv().SayzSettings.PnB then
+        getgenv().SayzSettings.PnB = {
+            Master = false,
+            Place = false,
+            Break = false,
+            Scanning = false,
+            TargetID = nil,
+            DelayScale = 1,
+            ActualDelay = 0.12,
+            PlaceDelay = 0.1,
+            SelectedTiles = {},
+            OriginGrid = nil,
+            LockPosition = false,
+            BreakMode = "Mode 1 (Fokus)"
+        }
+    end
+
+    -- Sekarang kita ambil variabelnya dengan aman
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
     
     _G.LastPnBState = "Waiting" 
-
-    -- Cek darurat: Jika PnB masih nil karena main.lua belum siap
-    if not PnB then
-        SubTab:AddLabel("Error: Data PnB tidak ditemukan!")
-        return
-    end
 
     -- ========================================
     -- [2] UI ELEMENTS
@@ -237,4 +251,5 @@ return function(SubTab, Window)
     end)
 
 end
+
 
