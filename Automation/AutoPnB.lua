@@ -1,6 +1,6 @@
 return function(SubTab, Window, myToken)
     -- ========================================
-    -- [1] VARIABEL & SETUP
+    -- [1] SETUP & VARIABLES
     -- ========================================
     local PnB = getgenv().SayzSettings.PnB 
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
@@ -12,15 +12,16 @@ return function(SubTab, Window, myToken)
     local lockedDoors = {}
     _G.LastPnBState = "Waiting" 
 
-    -- Inisialisasi Delay Collect jika belum ada di settings
-    PnB.CollectDelay = PnB.CollectDelay or 0.1
+    -- Inisialisasi Delay Collect Default
+    PnB.CollectDelay = PnB.CollectDelay or 0.05
 
     -- ========================================
-    -- [2] PATHFINDING CORE (SMARTPATH)
+    -- [2] PATHFINDING CORE (EXACTLY LIKE AUTOCOLLECT)
     -- ========================================
     local function isWalkable(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false, false end
         if lockedDoors[gx .. "," .. gy] then return false, false end 
+
         if WorldTiles[gx] and WorldTiles[gx][gy] then
             local l1 = WorldTiles[gx][gy][1]
             local itemName = (type(l1) == "table") and l1[1] or l1
@@ -37,14 +38,18 @@ return function(SubTab, Window, myToken)
         local queue = {{x = startX, y = startY, path = {}, cost = 0}}
         local visited = {[startX .. "," .. startY] = 0}
         local directions = {{x = 1, y = 0}, {x = -1, y = 0}, {x = 0, y = 1}, {x = 0, y = -1}}
+        
         local limitCount = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limitCount = limitCount + 1
-            if limitCount > 3000 then break end 
+            if limitCount > 4000 then break end 
+
             table.sort(queue, function(a, b) return a.cost < b.cost end)
             local current = table.remove(queue, 1)
+
             if current.x == targetX and current.y == targetY then return current.path end
+
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
                 local walkable = isWalkable(nx, ny)
@@ -53,6 +58,7 @@ return function(SubTab, Window, myToken)
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
                         local newPath = {unpack(current.path)}
+                        -- Simpan titik dalam World Position (dikali 4.5 sesuai standar abang)
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
                         table.insert(queue, {x = nx, y = ny, path = newPath, cost = newTotalCost})
                     end
@@ -63,13 +69,13 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [3] UI ELEMENTS (LENGKAP)
+    -- [3] UI ELEMENTS
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
     getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
     getgenv().SayzUI_Handles["PnB_Break"] = SubTab:AddToggle("Enable Break", PnB.Break, function(t) PnB.Break = t end)
-    getgenv().SayzUI_Handles["PnB_SmartCollect"] = SubTab:AddToggle("Walk to Collect (Grid)", PnB.AutoCollectInGrid, function(t) PnB.AutoCollectInGrid = t end)
+    getgenv().SayzUI_Handles["PnB_SmartCollect"] = SubTab:AddToggle("Walk to Collect (Grid Only)", PnB.AutoCollectInGrid, function(t) PnB.AutoCollectInGrid = t end)
 
     SubTab:AddSection("SCANNER")
     SubTab:AddButton("Scan ID Item", function() PnB.Scanning = true; Window:Notify("Pasang 1 blok manual!", 3) end)
@@ -83,8 +89,7 @@ return function(SubTab, Window, myToken)
         PnB.ActualDelay = PnB.DelayScale * 0.12
     end)
 
-    -- INPUT DELAY KHUSUS COLLECT (Permintaan Abang)
-    getgenv().SayzUI_Handles["PnB_CollectDelay"] = SubTab:AddInput("Collect Speed Delay", tostring(PnB.CollectDelay), function(v)
+    getgenv().SayzUI_Handles["PnB_CollectDelay"] = SubTab:AddInput("Collect Walk Delay", tostring(PnB.CollectDelay), function(v)
         local val = tonumber(v)
         if val then PnB.CollectDelay = val end
     end)
@@ -102,8 +107,27 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [4] FUNCTIONS HELPER
+    -- [4] HELPER: GET DROPS ONLY IN GRID
     -- ========================================
+    local function GetDropsInGrid(areaData)
+        local drops = {}
+        for _, tile in ipairs(areaData) do
+            for _, folder in pairs({"Drops", "Gems"}) do
+                local container = workspace:FindFirstChild(folder)
+                if container then
+                    for _, item in pairs(container:GetChildren()) do
+                        local pos = item:GetPivot().Position
+                        local ix, iy = math.floor(pos.X/4.5+0.5), math.floor(pos.Y/4.5+0.5)
+                        if ix == tile.pos.X and iy == tile.pos.Y then
+                            table.insert(drops, item)
+                        end
+                    end
+                end
+            end
+        end
+        return drops
+    end
+
     local function getActiveAmount()
         local total = 0
         local success, invModule = pcall(function() return require(game.ReplicatedStorage.Modules.Inventory) end)
@@ -119,25 +143,7 @@ return function(SubTab, Window, myToken)
         return total
     end
 
-    local function GetDropsInGrid(areaData)
-        local drops = {}
-        for _, tile in ipairs(areaData) do
-            for _, folder in pairs({"Drops", "Gems"}) do
-                local container = workspace:FindFirstChild(folder)
-                if container then
-                    for _, item in pairs(container:GetChildren()) do
-                        local pos = item:GetPivot().Position
-                        if math.floor(pos.X/4.5+0.5) == tile.pos.X and math.floor(pos.Y/4.5+0.5) == tile.pos.Y then
-                            table.insert(drops, item)
-                        end
-                    end
-                end
-            end
-        end
-        return drops
-    end
-
-    -- Hook Metamethod (Scanner)
+    -- Hook Metamethod Scanner
     if not _G.OldHookSet then
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -152,7 +158,7 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [5] MAIN TASK LOOP (STRICT SEQUENCE)
+    -- [5] MAIN TASK LOOP (SMOOTH 2D MOVEMENT)
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -165,7 +171,7 @@ return function(SubTab, Window, myToken)
 
                     local baseGrid = (PnB.LockPosition and PnB.OriginGrid) or { x = math.floor(Hitbox.Position.X/4.5+0.5), y = math.floor(Hitbox.Position.Y/4.5+0.5) }
 
-                    -- 1. Refresh & Sort Grid
+                    -- 1. Refresh Grid Data
                     local targets, currentFilled, selectedList = {}, 0, {}
                     for coordKey, active in pairs(PnB.SelectedTiles) do
                         if active then
@@ -182,7 +188,7 @@ return function(SubTab, Window, myToken)
                         if blockExist then currentFilled = currentFilled + 1 end
                     end
 
-                    -- PHASE A: BREAK (Hanya hancurkan sampai bersih)
+                    -- PHASE A: BREAK (Hanya hancurkan)
                     if PnB.Break and currentFilled > 0 then
                         _G.LastPnBState = "Breaking"
                         for _, tile in ipairs(targets) do
@@ -199,7 +205,7 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    -- PHASE B: COLLECT (Jalan kaki jika grid kosong tapi ada item)
+                    -- PHASE B: SMART COLLECT (WALK INSTEAD OF TELEPORT)
                     local drops = GetDropsInGrid(targets)
                     if PnB.AutoCollectInGrid and PnB.Master and #drops > 0 then
                         _G.LastPnBState = "Collecting"
@@ -211,18 +217,21 @@ return function(SubTab, Window, myToken)
                                 local path = findSmartPath(sx, sy, tx, ty)
                                 if path then
                                     for _, pt in ipairs(path) do
+                                        if _G.LatestRunToken ~= myToken then break end
+                                        -- BERJALAN SESUAI SMARTPATH (Standard Abang)
                                         Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
                                         movementModule.Position = Hitbox.Position
-                                        task.wait(PnB.CollectDelay) -- PAKAI DELAY INPUT USER
+                                        task.wait(PnB.CollectDelay)
                                     end
                                 end
                             end
                         end
-                        -- Balik ke Origin
+                        -- Balik ke Origin (Jalan juga)
                         local curX, curY = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
-                        local back = findSmartPath(curX, curY, baseGrid.x, baseGrid.y)
-                        if back then
-                            for _, pt in ipairs(back) do
+                        local backPath = findSmartPath(curX, curY, baseGrid.x, baseGrid.y)
+                        if backPath then
+                            for _, pt in ipairs(backPath) do
+                                if _G.LatestRunToken ~= myToken then break end
                                 Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
                                 task.wait(PnB.CollectDelay)
@@ -230,12 +239,12 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    -- PHASE C: PLACE (Hanya jika Break & Collect selesai)
+                    -- PHASE C: PLACE
                     local areaDataRef, filledCountRef = getAreaInfo()
                     local finalDrops = GetDropsInGrid(targets)
-                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and #finalDrops == 0)
+                    local canPlaceNow = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and #finalDrops == 0)
 
-                    if PnB.Place and filledCountRef < #targets and canPlace then
+                    if PnB.Place and filledCountRef < #targets and canPlaceNow then
                         _G.LastPnBState = "Placing"
                         for _, tile in ipairs(targets) do
                             if _G.LatestRunToken ~= myToken or not PnB.Master then break end
@@ -245,15 +254,16 @@ return function(SubTab, Window, myToken)
                             end
                         end
                     end
+
+                    if filledCountRef == 0 and #finalDrops == 0 then _G.LastPnBState = "Waiting" end
                 end)
             end
             
-            -- UPDATE VISUALS (Wajib ada biar ga dikira hapus fitur)
             pcall(function()
                 InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
                 StokLabel:SetText("Total Stok: " .. getActiveAmount())
             end)
-            task.wait(0.1)
+            task.wait(0.01)
         end
     end)
 end
