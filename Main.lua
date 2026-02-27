@@ -1,5 +1,7 @@
 -- [[ 1. SCRIPT IDENTITY & CLEANUP ]] --
--- Memberi tanda waktu unik agar loop lama tahu kapan harus berhenti
+getgenv().SayzLatestRunID = nil -- Matikan script lama
+task.wait(0.5) -- JEDA PENTING: Memberi waktu loop lama untuk berhenti
+
 local CurrentRunID = os.clock()
 getgenv().SayzLatestRunID = CurrentRunID
 
@@ -72,3 +74,4 @@ loadstring(game:HttpGet(GetRaw("Modules/Automation.lua")))()(Window)
 loadstring(game:HttpGet(GetRaw("Modules/Miscs.lua")))()(Window)
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
+
