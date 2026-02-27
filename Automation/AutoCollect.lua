@@ -1,4 +1,4 @@
-return function(SubTab, Window)
+return function(SubTab, Window, myToken)
     -- [[ 1. SETUP & VARIABLES ]] --
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
@@ -10,7 +10,7 @@ return function(SubTab, Window)
     getgenv().TakeGems = getgenv().TakeGems or true 
     getgenv().StepDelay = getgenv().StepDelay or 0.05 
     getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
-    -- Ini fitur Radius yang kamu minta (Default 50)
+    -- Ini fitur Radius (Default 50) - Algoritma asli tetap menggunakan ini
     getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
@@ -95,6 +95,7 @@ return function(SubTab, Window)
         
         local limitCount = 0
         while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
             limitCount = limitCount + 1
             if limitCount > 4000 then break end 
 
@@ -110,8 +111,7 @@ return function(SubTab, Window)
                 local walkable, isBlacklisted = isWalkable(nx, ny)
 
                 if walkable then
-                    -- LOGIKA RADIUS/BEBAN:
-                    -- Semakin tinggi AvoidanceStrength, semakin bot anti lewat item blacklist
+                    -- LOGIKA RADIUS/BEBAN (Original):
                     local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
 
@@ -161,23 +161,24 @@ return function(SubTab, Window)
     -- [[ 3. UI ELEMENTS ]] --
 
     SubTab:AddSection("Auto Collect Master")
-    SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
+    
+    getgenv().SayzUI_Handles["AutoCollectEnabled"] = SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
 
-    SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
+    getgenv().SayzUI_Handles["TakeGemsToggle"] = SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
         getgenv().TakeGems = state
     end)
 
     SubTab:AddSection("Path & Speed Settings")
     
-    SubTab:AddSlider("Movement Speed", 0.01, 0.2, 0.05, function(val)
+    -- slider v3.1 support decimal (parameter 2 untuk presisi desimal)
+    getgenv().SayzUI_Handles["StepDelaySlider"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, getgenv().StepDelay, function(val)
         getgenv().StepDelay = val
-    end)
+    end, 2)
 
-    -- Input Radius/Beban sesuai permintaanmu
-    SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
+    getgenv().SayzUI_Handles["AvoidanceInput"] = SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
         local val = tonumber(v)
         if val then
             getgenv().AvoidanceStrength = val
@@ -186,8 +187,6 @@ return function(SubTab, Window)
     end)
 
     SubTab:AddSection("Filter Management")
-    
-    -- Label Daftar Blacklist Aktif
     local FilterLabel = SubTab:AddLabel("Active Blacklist: None")
 
     local MultiDrop
@@ -197,6 +196,7 @@ return function(SubTab, Window)
         for k, _ in pairs(selected) do table.insert(list, k) end
         FilterLabel:SetText(#list > 0 and "Active Blacklist: " .. table.concat(list, ", ") or "Active Blacklist: None")
     end)
+    getgenv().SayzUI_Handles["ItemFilterDropdown"] = MultiDrop
 
     SubTab:AddButton("Scan World Items", function()
         local found = {}
@@ -219,7 +219,6 @@ return function(SubTab, Window)
         badItems = {}
         lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
-        -- Fix: Benar-benar mereset pilihan di UI Dropdown
         if MultiDrop and MultiDrop.Set then 
             MultiDrop:Set({}) 
         end
@@ -232,7 +231,8 @@ return function(SubTab, Window)
 
     -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
-        while task.wait() do
+        while _G.LatestRunToken == myToken do
+            task.wait()
             if getgenv().AutoCollect then
                 pcall(function()
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
@@ -245,7 +245,7 @@ return function(SubTab, Window)
     -- [[ 5. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
-        while true do
+        while _G.LatestRunToken == myToken do
             pcall(function()
                 if getgenv().AutoCollect then
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
@@ -261,7 +261,7 @@ return function(SubTab, Window)
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for i, point in ipairs(path) do
-                                if not getgenv().AutoCollect then break end
+                                if not getgenv().AutoCollect or _G.LatestRunToken ~= myToken then break end
                                 
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
