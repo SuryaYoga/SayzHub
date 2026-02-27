@@ -1,12 +1,17 @@
 return function(SubTab, Window)
-    -- [[ 1. SETUP & REFERENCES ]] --
+    -- [[ 1. SETUP & VARIABLES ]] --
+    local myToken = _G.LatestRunToken -- Token untuk Kill Switch
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
-    -- Merujuk ke Pusat Data di Main.lua
-    local S = getgenv().SayzSettings.AutoCollect
+    -- Pengaturan Global
+    getgenv().AutoCollect = getgenv().AutoCollect or false
+    getgenv().TakeGems = getgenv().TakeGems or true 
+    getgenv().StepDelay = getgenv().StepDelay or 0.05 
+    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
+    getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
     local doorDatabase = {} 
@@ -31,7 +36,7 @@ return function(SubTab, Window)
 
     local function getBlacklistItemAt(gx, gy)
         local folders = {"Drops"}
-        if S.TakeGems then table.insert(folders, "Gems") end
+        if getgenv().TakeGems then table.insert(folders, "Gems") end
         for _, folderName in pairs(folders) do
             local container = workspace:FindFirstChild(folderName)
             if container then
@@ -42,7 +47,9 @@ return function(SubTab, Window)
                     
                     if itX == gx and itY == gy then
                         local id = item:GetAttribute("id") or item.Name
-                        if S.ItemBlacklist[id] then return true end
+                        if getgenv().ItemBlacklist[id] then 
+                            return true 
+                        end
                     end
                 end
             end
@@ -54,7 +61,10 @@ return function(SubTab, Window)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
             return false, false 
         end
-        if lockedDoors[gx .. "," .. gy] then return false, false end 
+        
+        if lockedDoors[gx .. "," .. gy] then 
+            return false, false 
+        end 
 
         local hasBlacklist = getBlacklistItemAt(gx, gy)
 
@@ -75,31 +85,42 @@ return function(SubTab, Window)
     local function findSmartPath(startX, startY, targetX, targetY)
         local queue = {{x = startX, y = startY, path = {}, cost = 0}}
         local visited = {[startX .. "," .. startY] = 0}
-        local directions = {{x = 1, y = 0}, {x = -1, y = 0}, {x = 0, y = 1}, {x = 0, y = -1}}
+        local directions = {
+            {x = 1, y = 0}, {x = -1, y = 0}, 
+            {x = 0, y = 1}, {x = 0, y = -1}
+        }
         
         local limitCount = 0
         while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
             limitCount = limitCount + 1
             if limitCount > 4000 then break end 
 
             table.sort(queue, function(a, b) return a.cost < b.cost end)
             local current = table.remove(queue, 1)
 
-            if current.x == targetX and current.y == targetY then return current.path end
+            if current.x == targetX and current.y == targetY then 
+                return current.path 
+            end
 
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
                 local walkable, isBlacklisted = isWalkable(nx, ny)
 
                 if walkable then
-                    local moveCost = isBlacklisted and S.AvoidanceStrength or 1
+                    local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
 
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
                         local newPath = {unpack(current.path)}
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x = nx, y = ny, path = newPath, cost = newTotalCost})
+                        table.insert(queue, {
+                            x = nx, 
+                            y = ny, 
+                            path = newPath, 
+                            cost = newTotalCost
+                        })
                     end
                 end
             end
@@ -113,16 +134,19 @@ return function(SubTab, Window)
         if not root then return nil end
 
         local folders = {"Drops"}
-        if S.TakeGems then table.insert(folders, "Gems") end
+        if getgenv().TakeGems then table.insert(folders, "Gems") end
 
         for _, folder in pairs(folders) do
             local container = workspace:FindFirstChild(folder)
             if container then
                 for _, item in pairs(container:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
-                    if not badItems[item] and not S.ItemBlacklist[id] then
+                    if not badItems[item] and not getgenv().ItemBlacklist[id] then
                         local d = (root.Position - item:GetPivot().Position).Magnitude
-                        if d < dist then dist = d; target = item end
+                        if d < dist then 
+                            dist = d
+                            target = item 
+                        end
                     end
                 end
             end
@@ -133,30 +157,35 @@ return function(SubTab, Window)
     -- [[ 3. UI ELEMENTS ]] --
 
     SubTab:AddSection("Auto Collect Master")
-    SubTab:AddToggle("Enable Auto Collect", S.Enabled, function(state)
-        S.Enabled = state
+    SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
+        getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
 
-    SubTab:AddToggle("Collect Gems", S.TakeGems, function(state)
-        S.TakeGems = state
+    SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
+        getgenv().TakeGems = state
     end)
 
     SubTab:AddSection("Path & Speed Settings")
-    SubTab:AddSlider("Movement Speed", 0.01, 0.2, S.StepDelay, function(val)
-        S.StepDelay = val
+    
+    SubTab:AddSlider("Movement Speed", 0.01, 0.2, 0.05, function(val)
+        getgenv().StepDelay = val
     end)
 
-    SubTab:AddInput("Avoidance Cost", tostring(S.AvoidanceStrength), function(v)
+    SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
         local val = tonumber(v)
-        if val then S.AvoidanceStrength = val end
+        if val then
+            getgenv().AvoidanceStrength = val
+            Window:Notify("Avoidance set to: " .. val, 2)
+        end
     end)
 
     SubTab:AddSection("Filter Management")
     local FilterLabel = SubTab:AddLabel("Active Blacklist: None")
+
     local MultiDrop
     MultiDrop = SubTab:AddMultiDropdown("Filter Items", currentPool, function(selected)
-        S.ItemBlacklist = selected
+        getgenv().ItemBlacklist = selected
         local list = {}
         for k, _ in pairs(selected) do table.insert(list, k) end
         FilterLabel:SetText(#list > 0 and "Active Blacklist: " .. table.concat(list, ", ") or "Active Blacklist: None")
@@ -175,20 +204,24 @@ return function(SubTab, Window)
         end
         currentPool = found
         MultiDrop:UpdateList(found)
+        Window:Notify("Found " .. #found .. " item types.", 2)
     end)
 
-    -- TOMBOL RESET DIPISAH
+    -- TOMBOL RESET BARU (ITEM ONLY)
     SubTab:AddButton("Reset Item Filters", function()
-        S.ItemBlacklist = {}
-        badItems = {} 
+        getgenv().ItemBlacklist = {}
+        badItems = {}
         FilterLabel:SetText("Active Blacklist: None")
-        if MultiDrop and MultiDrop.Set then MultiDrop:Set({}) end
-        Window:Notify("Items reset!", 2)
+        if MultiDrop and MultiDrop.Set then 
+            MultiDrop:Set({}) -- Mereset tampilan Dropdown di UI
+        end
+        Window:Notify("Item filters cleared!", 2)
     end)
 
-    SubTab:AddButton("Reset Door Memory", function()
+    -- TOMBOL RESET BARU (DOOR ONLY)
+    SubTab:AddButton("Reset Stuck Doors", function()
         lockedDoors = {}
-        Window:Notify("Doors memory cleared!", 2)
+        Window:Notify("Door database refreshed!", 2)
     end)
 
     SubTab:AddSection("Status Dashboard")
@@ -197,8 +230,9 @@ return function(SubTab, Window)
 
     -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
-        while task.wait() do
-            if S.Enabled then
+        while _G.LatestRunToken == myToken do
+            task.wait()
+            if getgenv().AutoCollect then
                 pcall(function()
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
                     movementModule.Grounded = true 
@@ -210,9 +244,9 @@ return function(SubTab, Window)
     -- [[ 5. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
-        while true do
+        while _G.LatestRunToken == myToken do
             pcall(function()
-                if S.Enabled then
+                if getgenv().AutoCollect then
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     local target = GetNearestItem()
                     
@@ -226,18 +260,21 @@ return function(SubTab, Window)
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for i, point in ipairs(path) do
-                                if not S.Enabled then break end
+                                -- CEK TOKEN & TOGGLE DI DALAM PATH
+                                if _G.LatestRunToken ~= myToken or not getgenv().AutoCollect then break end
+                                
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
-                                task.wait(S.StepDelay)
+                                task.wait(getgenv().StepDelay)
 
-                                -- Deteksi Stuck lebih ketat (dist > 2)
+                                -- Deteksi Stuck Pintu
                                 local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                                 if char then
                                     local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                                    if dist > 2 then
-                                        lockedDoors[math.floor(point.X/4.5+0.5) .. "," .. math.floor(point.Y/4.5+0.5)] = true
+                                    if dist > 5 then
+                                        local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
+                                        lockedDoors[px .. "," .. py] = true
                                         break
                                     end
                                 end
@@ -255,5 +292,6 @@ return function(SubTab, Window)
             end)
             task.wait(0.2)
         end
+        print("Auto Collect: Loop Terminated.")
     end)
 end
