@@ -2,8 +2,7 @@ return function(SubTab, Window)
     -- ========================================
     -- [1] VARIABEL & SETUP
     -- ========================================
-    -- Merujuk ke Pusat Data di Main.lua
-    local PnB = getgenv().SayzSettings.PnB 
+    local PnB = getgenv().PnBSettings -- Ambil data dari Main.lua
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
     
@@ -11,7 +10,7 @@ return function(SubTab, Window)
     _G.LastPnBState = "Waiting" 
 
     -- ========================================
-    -- [2] UI ELEMENTS
+    -- [2] UI ELEMENTS (Ditaruh di Atas)
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
     SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
@@ -27,8 +26,7 @@ return function(SubTab, Window)
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    -- Default value mengambil dari tabel PnB.DelayScale
-    SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale), function(v)
+    SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
         local val = tonumber(v) or 1
         if val < 0.1 then val = 0.1 end
         PnB.DelayScale = val
@@ -150,6 +148,7 @@ return function(SubTab, Window)
                             end
                         end
 
+                        -- Sortir biar rapi urutan pasang/hancurnya
                         table.sort(selectedList, function(a, b)
                             if a.oy ~= b.oy then return a.oy > b.oy end
                             return a.ox < b.ox
@@ -231,4 +230,5 @@ return function(SubTab, Window)
             task.wait(0.01)
         end
     end)
+
 end
