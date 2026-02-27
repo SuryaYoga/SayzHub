@@ -4,7 +4,7 @@ return function(SubTab, Window, myToken)
     -- ========================================
     local Settings = getgenv().SayzSettings.AutoCollect
 
-    -- Variabel Internal Lokal (Algoritma asli kamu)
+    -- Variabel Internal Lokal
     local lockedDoors = {}
     local badItems = {}
     local currentPool = {}
@@ -82,7 +82,6 @@ return function(SubTab, Window, myToken)
         return true, hasBlacklist
     end
 
-    -- Fungsi Heuristic untuk mempercepat pencarian jalur (A*)
     local function getDistance(x1, y1, x2, y2)
         return math.abs(x1 - x2) + math.abs(y1 - y2)
     end
@@ -101,7 +100,6 @@ return function(SubTab, Window, myToken)
             limitCount = limitCount + 1
             if limitCount > 4000 then break end 
 
-            -- Sort berdasarkan priority (Heuristic)
             table.sort(queue, function(a, b) return a.priority < b.priority end)
             local current = table.remove(queue, 1)
 
@@ -122,7 +120,6 @@ return function(SubTab, Window, myToken)
                         local newPath = {unpack(current.path)}
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
                         
-                        -- Priority = Cost + Jarak Udara ke Target
                         local priority = newTotalCost + getDistance(nx, ny, targetX, targetY)
                         
                         table.insert(queue, {
@@ -153,7 +150,6 @@ return function(SubTab, Window, myToken)
                 for _, item in pairs(container:GetChildren()) do
                     local id = item:GetAttribute("id") or item.Name
                     if not badItems[item] and not Settings.ItemBlacklist[id] then
-                        -- Menggunakan sqrMagnitude untuk efisiensi (opsional)
                         local d = (root.Position - item:GetPivot().Position).Magnitude
                         if d < dist then 
                             dist = d
@@ -166,8 +162,7 @@ return function(SubTab, Window, myToken)
         return target
     end
 
-    -- [[ 3. UI ELEMENTS - Config Ready ]] --
-
+    -- [[ 3. UI ELEMENTS ]] --
     SubTab:AddSection("Auto Collect Master")
     
     getgenv().SayzUI_Handles["AC_Toggle"] = SubTab:AddToggle("Enable Auto Collect", Settings.Enabled, function(state)
@@ -181,7 +176,6 @@ return function(SubTab, Window, myToken)
 
     SubTab:AddSection("Path & Speed Settings")
     
-    -- Menggunakan Slider Desimal v3.1
     getgenv().SayzUI_Handles["AC_Speed"] = SubTab:AddSlider("Movement Speed", 0.01, 1.0, Settings.StepDelay, function(val)
         Settings.StepDelay = val
     end, 2)
@@ -265,12 +259,15 @@ return function(SubTab, Window, myToken)
                             for i, point in ipairs(path) do
                                 if _G.LatestRunToken ~= myToken or not Settings.Enabled then break end
                                 
+                                -- FIX ARAH HADAP (ROTATION)
+                                local direction = (point.X > char.Position.X) and 0 or math.pi
+                                char.CFrame = CFrame.new(point.X, point.Y, char.Position.Z) * CFrame.Angles(0, direction, 0)
+                                
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
-                                char.CFrame = CFrame.new(point.X, point.Y, char.Position.Z)
                                 movementModule.Position = char.Position
                                 task.wait(Settings.StepDelay)
 
-                                -- Deteksi Stuck Pintu
+                                -- Deteksi Stuck
                                 local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
                                 if dist > 5 then
                                     local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
@@ -291,6 +288,5 @@ return function(SubTab, Window, myToken)
             end)
             task.wait(0.1)
         end
-        print("Auto Collect: Loop Terminated.")
     end)
 end
