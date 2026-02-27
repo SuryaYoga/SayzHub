@@ -272,7 +272,7 @@ return function(SubTab, Window)
                                 local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                                 if char then
                                     local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                                    if dist > 5 then
+                                    if dist > 3 then
                                         local px, py = math.floor(point.X/4.5+0.5), math.floor(point.Y/4.5+0.5)
                                         lockedDoors[px .. "," .. py] = true
                                         break
@@ -294,3 +294,4 @@ return function(SubTab, Window)
         end
     end)
 end
+
