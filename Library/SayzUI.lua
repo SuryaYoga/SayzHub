@@ -196,7 +196,7 @@ function SayzUI:CreateWindow(opts)
 	-- ScreenGui
 	local gui = mk("ScreenGui", {
 		Name = guiName,
-		DisplayOrder = 999
+		DisplayOrder = 999,
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		Parent = pgui,
