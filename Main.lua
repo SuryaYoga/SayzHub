@@ -2,16 +2,22 @@
 _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 local myToken = _G.LatestRunToken
 
--- [[ 2. EXECUTOR CHECK & ANTI-AFK ]] --
-if not game:IsLoaded() then game.Loaded:Wait() end
-
--- Anti-AFK Function (Mencegah Kick Idle 20 Menit)
+-- Anti-AFK Function (Sesuai Token agar tidak Spam)
 local function InitAntiAFK()
     local VirtualUser = game:GetService("VirtualUser")
-    game:GetService("Players").LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-        print("SayzHub: Anti-AFK Action Performed.")
+    -- Simpan koneksi ke variabel agar bisa dicek
+    if _G.AFKConnection then _G.AFKConnection:Disconnect() end
+    
+    _G.AFKConnection = game:GetService("Players").LocalPlayer.Idled:Connect(function()
+        -- Hanya jalan jika token script ini masih yang terbaru
+        if _G.LatestRunToken == myToken then
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+            print("SayzHub: Anti-AFK Action Performed.")
+        else
+            -- Kalau token udah beda (script udah di-restart), matikan koneksi ini
+            if _G.AFKConnection then _G.AFKConnection:Disconnect() end
+        end
     end)
 end
 InitAntiAFK()
@@ -105,3 +111,4 @@ SafeLoad("Modules/Automation.lua", "Automation")
 SafeLoad("Modules/Miscs.lua", "Miscs")
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
+
