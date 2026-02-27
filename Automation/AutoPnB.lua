@@ -1,13 +1,12 @@
 return function(SubTab, Window)
     -- ========================================
-    -- [1] VARIABEL & SETUP
+    -- [1] VARIABEL & SETUP (SINKRONISASI TOKEN)
     -- ========================================
-    -- Merujuk ke Pusat Data di Main.lua
+    local myToken = _G.LatestRunToken -- Menangkap token unik saat script dijalankan
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
     
-    -- Variabel internal untuk status transisi
     _G.LastPnBState = "Waiting" 
 
     -- ========================================
@@ -27,7 +26,6 @@ return function(SubTab, Window)
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    -- Default value mengambil dari tabel PnB.DelayScale
     SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale), function(v)
         local val = tonumber(v) or 1
         if val < 0.1 then val = 0.1 end
@@ -38,8 +36,6 @@ return function(SubTab, Window)
     SubTab:AddSection("GRID TARGET (5x5)")
     SubTab:AddGridSelector(function(selectedTable)
         PnB.SelectedTiles = selectedTable
-        
-        -- Auto-Set Origin saat memilih grid
         local char = LP.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
@@ -50,9 +46,7 @@ return function(SubTab, Window)
         end
     end)
 
-    SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) 
-        PnB.LockPosition = t 
-    end)
+    SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) PnB.LockPosition = t end)
 
     SubTab:AddButton("Refresh Position / Set Origin", function()
         local char = LP.Character
@@ -78,7 +72,6 @@ return function(SubTab, Window)
         local success, invModule = pcall(function() 
             return require(game.ReplicatedStorage.Modules.Inventory) 
         end)
-        
         if success and invModule and invModule.Stacks then
             local targetIndex = tonumber(PnB.TargetID)
             local baseStack = invModule.Stacks[targetIndex]
@@ -95,18 +88,20 @@ return function(SubTab, Window)
     end
 
     local function updatePnBVisuals()
+        if _G.LatestRunToken ~= myToken then return end -- Stop visual update jika mati
         pcall(function()
             InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
             StokLabel:SetText("Total Stok: " .. getActiveAmount())
         end)
     end
 
-    -- Hook Metamethod untuk Scanner
+    -- Hook Metamethod (Scanner)
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
         local args = {...}
-        if PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
+        -- Scanner juga cek Token agar tidak nyangkut di memori
+        if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
             PnB.TargetID = args[2]
             PnB.Scanning = false
             Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
@@ -115,17 +110,16 @@ return function(SubTab, Window)
     end)
 
     -- ========================================
-    -- [4] MAIN LOOP (EKSEKUSI)
+    -- [4] MAIN LOOP (DENGAN KILL SWITCH TOKEN)
     -- ========================================
     task.spawn(function()
-        while true do
+        while _G.LatestRunToken == myToken do -- CEK TOKEN DI LOOP UTAMA
             if PnB.Master then
                 pcall(function()
                     local char = LP.Character
                     local root = char and char:FindFirstChild("HumanoidRootPart")
                     if not root then return end
 
-                    -- Tentukan Base Grid
                     local baseGrid
                     if PnB.LockPosition and PnB.OriginGrid then
                         baseGrid = PnB.OriginGrid
@@ -137,24 +131,20 @@ return function(SubTab, Window)
                         PnB.OriginGrid = baseGrid
                     end
 
-                    -- Ambil data target dari Grid Selector
                     local function getAreaInfo()
                         local targets = {}
                         local currentFilled = 0
                         local selectedList = {}
-
                         for coordKey, active in pairs(PnB.SelectedTiles) do
                             if active then
                                 local parts = string.split(coordKey, ",")
                                 table.insert(selectedList, {ox = tonumber(parts[1]), oy = tonumber(parts[2])})
                             end
                         end
-
                         table.sort(selectedList, function(a, b)
                             if a.oy ~= b.oy then return a.oy > b.oy end
                             return a.ox < b.ox
                         end)
-
                         for _, offset in ipairs(selectedList) do
                             local tx = baseGrid.x + offset.ox
                             local ty = baseGrid.y + offset.oy
@@ -162,7 +152,6 @@ return function(SubTab, Window)
                             local blockExist = tileData and tileData[1] ~= nil
                             local wallExist = tileData and tileData[2] ~= nil
                             local isFilled = blockExist or wallExist
-                            
                             table.insert(targets, {
                                 pos = Vector2.new(tx, ty), 
                                 isFilled = isFilled,
@@ -182,7 +171,9 @@ return function(SubTab, Window)
                             _G.LastPnBState = "Placing"
                             if getActiveAmount() > 0 then
                                 for _, tile in ipairs(areaData) do
-                                    if not tile.isFilled and PnB.Master then
+                                    -- CEK TOKEN DI DALAM FOR LOOP
+                                    if _G.LatestRunToken ~= myToken or not PnB.Master then break end
+                                    if not tile.isFilled then
                                         game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
                                         task.wait(PnB.PlaceDelay)
                                     end
@@ -199,8 +190,12 @@ return function(SubTab, Window)
                             _G.LastPnBState = "Breaking"
                             if PnB.BreakMode == "Mode 1 (Fokus)" then
                                 for _, tile in ipairs(areaData) do
+                                    -- CEK TOKEN SEBELUM PINDAH BLOK
+                                    if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     if tile.isFilled then
                                         while PnB.Master and PnB.Break do
+                                            -- CEK TOKEN SAAT MUKUL (SANGAT PENTING!)
+                                            if _G.LatestRunToken ~= myToken then break end
                                             local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
                                             if check == nil then break end 
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
@@ -210,7 +205,9 @@ return function(SubTab, Window)
                                 end
                             else -- Mode Sweep
                                 while filledCount > 0 and PnB.Master and PnB.Break do
+                                    if _G.LatestRunToken ~= myToken then break end
                                     for _, tile in ipairs(areaData) do
+                                        if _G.LatestRunToken ~= myToken then break end
                                         if tile.isFilled then
                                             game.ReplicatedStorage.Remotes.PlayerFist:FireServer(tile.pos)
                                             task.wait(0.02)
@@ -230,5 +227,6 @@ return function(SubTab, Window)
             updatePnBVisuals()
             task.wait(0.01)
         end
+        print("PnB: Loop terminated safely.")
     end)
 end
