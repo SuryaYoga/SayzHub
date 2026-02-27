@@ -1,9 +1,22 @@
 -- [[ 1. SCRIPT IDENTITY & TOKEN SYSTEM ]] --
--- Gunakan Token agar sinkron dengan library SayzUI yang sudah kita modif
 _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 local myToken = _G.LatestRunToken
 
--- [[ 2. CONFIGURATION ]] --
+-- [[ 2. EXECUTOR CHECK & ANTI-AFK ]] --
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- Anti-AFK Function (Mencegah Kick Idle 20 Menit)
+local function InitAntiAFK()
+    local VirtualUser = game:GetService("VirtualUser")
+    game:GetService("Players").LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+        print("SayzHub: Anti-AFK Action Performed.")
+    end)
+end
+InitAntiAFK()
+
+-- [[ 3. CONFIGURATION ]] --
 getgenv().SayzConfig = {
     UserName = "SuryaYoga",
     Repo = "SayzHub",
@@ -16,7 +29,10 @@ local function GetRaw(path)
 end
 getgenv().GetRaw = GetRaw
 
--- [[ 3. GLOBAL SETTINGS TABLE ]] --
+-- Tabel Penampung Handle UI (Untuk mempermudah Fitur Config nanti)
+getgenv().SayzUI_Handles = {}
+
+-- [[ 4. GLOBAL SETTINGS TABLE ]] --
 getgenv().SayzSettings = {
     AutoCollect = {
         Enabled = false,
@@ -37,9 +53,15 @@ getgenv().SayzSettings = {
     }
 }
 
--- [[ 4. UI INITIALIZATION ]] --
--- Pastikan Library SayzUI.lua di GitHub sudah kamu update dengan _G.LatestRunToken tadi
-local SayzUI = loadstring(game:HttpGet(GetRaw("Library/SayzUI.lua")))()
+-- [[ 5. UI INITIALIZATION ]] --
+local successUI, SayzUI = pcall(function()
+    return loadstring(game:HttpGet(GetRaw("Library/SayzUI.lua")))()
+end)
+
+if not successUI then
+    warn("SayzHub: Gagal memuat UI Library. Pastikan koneksi internet stabil.")
+    return
+end
 
 local Window = SayzUI:CreateWindow({
     Title = "SayzUI v1",
@@ -48,30 +70,36 @@ local Window = SayzUI:CreateWindow({
     ToggleKeybind = Enum.KeyCode.K,
     ShowWelcomeToast = true,
     ShowLoading = true,
-    -- Menambahkan fungsi OnClose agar token naik saat UI ditutup
     OnClose = function()
         _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
         getgenv().SayzSettings = nil
+        getgenv().SayzUI_Handles = nil
         print("SayzHub: Stopped and Cleaned.")
     end
 })
 
--- [[ 5. LOAD MODULES ]] --
--- Kita bungkus dengan pcall agar jika satu modul error, yang lain tetap jalan
+-- [[ 6. LOAD MODULES WITH ENHANCED LOGGING ]] --
 local function SafeLoad(path, name)
+    Window:SetLoadingText("Loading " .. name .. "...")
+    
     local success, code = pcall(game.HttpGet, game, GetRaw(path))
     if success then
         local chunk, err = loadstring(code)
         if chunk then
-            pcall(function() chunk()(Window) end)
+            local runSuccess, runErr = pcall(function() chunk()(Window) end)
+            if not runSuccess then
+                Window:Notify("Error in " .. name .. ": " .. tostring(runErr), 5, "danger")
+            end
         else
-            warn("Syntax Error in " .. name .. ": " .. err)
+            Window:Notify("Syntax Error in " .. name, 5, "danger")
+            warn("SayzHub [" .. name .. "]: " .. err)
         end
     else
-        warn("Failed to download " .. name)
+        Window:Notify("Gagal download modul: " .. name, 5, "danger")
     end
 end
 
+-- Eksekusi Loading Modul
 SafeLoad("Modules/Beranda.lua", "Beranda")
 SafeLoad("Modules/Automation.lua", "Automation")
 SafeLoad("Modules/Miscs.lua", "Miscs")
