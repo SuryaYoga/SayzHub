@@ -5,6 +5,11 @@ getgenv().SayzConfig = {
     Branch = "main"
 }
 
+local gui = game:GetService("CoreGui"):FindFirstChild("SayzUI v1") or game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("SayzUI v1")
+if gui then
+    gui.DisplayOrder = 9999
+end
+
 local function GetRaw(path)
     return string.format("https://raw.githubusercontent.com/%s/%s/%s/%s",
         getgenv().SayzConfig.UserName, getgenv().SayzConfig.Repo, getgenv().SayzConfig.Branch, path)
@@ -65,3 +70,4 @@ loadstring(game:HttpGet(GetRaw("Modules/Automation.lua")))()(Window)
 loadstring(game:HttpGet(GetRaw("Modules/Miscs.lua")))()(Window)
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
+
