@@ -1136,8 +1136,7 @@ function SayzUI:CreateWindow(opts)
 			    table.insert(sub._items, function()
 			        local open = false
 			        local card = rowCard()
-			        -- Agar tidak tertutup UI game, pastikan ScreenGui induk memiliki DisplayOrder tinggi
-			        card.ZIndex = 1100 
+			         
 			
 			        mk("TextLabel", {
 			            BackgroundTransparency = 1,
