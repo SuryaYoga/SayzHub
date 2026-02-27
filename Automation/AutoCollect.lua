@@ -207,21 +207,24 @@ return function(SubTab, Window)
         Window:Notify("Found " .. #found .. " item types.", 2)
     end)
 
-    -- TOMBOL RESET BARU (ITEM ONLY)
-    SubTab:AddButton("Reset Item Filters", function()
+    -- Tombol Reset Utama
+    SubTab:AddButton("Reset All Filters", function()
         getgenv().ItemBlacklist = {}
         badItems = {}
         FilterLabel:SetText("Active Blacklist: None")
+        
+        -- Memanggil fungsi :Set([]) yang baru kita buat di library
         if MultiDrop and MultiDrop.Set then 
-            MultiDrop:Set({}) -- Mereset tampilan Dropdown di UI
+            MultiDrop:Set({}) 
         end
-        Window:Notify("Item filters cleared!", 2)
+        
+        Window:Notify("Filters & UI Reset!", 2)
     end)
-
-    -- TOMBOL RESET BARU (DOOR ONLY)
+    
+    -- Tombol Reset Door Terpisah
     SubTab:AddButton("Reset Stuck Doors", function()
-        lockedDoors = {}
-        Window:Notify("Door database refreshed!", 2)
+        lockedDoors = {} -- Membersihkan list pintu yang bikin stuck
+        Window:Notify("Stuck Doors Cleared!", 2)
     end)
 
     SubTab:AddSection("Status Dashboard")
@@ -295,3 +298,4 @@ return function(SubTab, Window)
         print("Auto Collect: Loop Terminated.")
     end)
 end
+
