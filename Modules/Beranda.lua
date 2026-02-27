@@ -1,6 +1,6 @@
 return function(Window)
-    -- Ambil referensi setting (jika nanti butuh simpan info user di config)
     local Settings = getgenv().SayzSettings
+    local myToken = _G.LatestRunToken
 
     -- ========================================
     -- TAB 1: Beranda
@@ -10,26 +10,44 @@ return function(Window)
     -- 1. SUBTAB HOME
     local Home = BerandaTab:AddSubTab("Home")
     Home:AddLabel("SayzUI v1 - Beranda")
-    Home:AddParagraph("Info", "Selamat datang di SayzHub!")
+    Home:AddParagraph("Info", "Selamat datang di SayzHub, " .. game.Players.LocalPlayer.DisplayName .. "!")
 
-    Home:AddSection("Links")
+    Home:AddSection("Links & Sosial Media")
     local function copyLink(label, url)
-        local ok = pcall(function()
-            if setclipboard then setclipboard(url) else error("Unsupported") end
-        end)
-        if ok then Window:Notify(label .. " copied!", 2, "ok") else Window:Notify("Failed to copy", 2, "error") end
+        if setclipboard then 
+            setclipboard(url) 
+            Window:Notify(label .. " disalin!", 2, "ok")
+        else 
+            Window:Notify("Executor tidak mendukung clipboard", 2, "danger") 
+        end
     end
 
     Home:AddButton("Copy Discord Invite", function() copyLink("Discord", "https://discord.gg/XXXXXXX") end)
+    Home:AddButton("Follow TikTok", function() copyLink("TikTok", "https://www.tiktok.com/@username_kamu") end)
     
     Home:AddSection("Quick Actions")
     Home:AddButton("Re-Execute Script", function() 
-        loadstring(game:HttpGet(getgenv().GetRaw("main.lua")))() 
+        loadstring(game:HttpGet(getgenv().GetRaw("Main.lua")))() 
     end)
-    Home:AddParagraph("Tips", "Tekan [K] untuk menyembunyikan UI.\nScript akan otomatis load saat pindah world.")
+    Home:AddButton("Hancurkan UI", function() Window:Destroy() end)
 
-    -- 2. SUBTAB SINYAL & STATISTIK
-    local SinyalSub = BerandaTab:AddSubTab("Sinyal & Statistik")
+    -- 2. SUBTAB TUTORIAL & INFO
+    local TutorSub = BerandaTab:AddSubTab("Panduan Umum")
+    TutorSub:AddSection("Dasar Penggunaan")
+    TutorSub:AddParagraph("Tombol Menu", "Tekan [K] untuk menyembunyikan menu. Jika menggunakan Mobile, gunakan tombol Drag melayang untuk membuka.")
+    TutorSub:AddParagraph("Safety", "Gunakan Step Delay di atas 0.05 agar akun lebih aman dari deteksi server.")
+    TutorSub:AddParagraph("Fitur Spesifik", "Tutorial detail untuk tiap fitur (PnB/AutoCollect) bisa kamu temukan di bagian bawah masing-masing fitur tersebut.")
+
+    -- 3. SUBTAB CHANGELOG (Biar Terlihat Update)
+    local LogSub = BerandaTab:AddSubTab("Changelog")
+    LogSub:AddSection("Versi 3.1 (Latest)")
+    LogSub:AddLabel("- Fixed: Dropdown Z-Index & Clips")
+    LogSub:AddLabel("- Added: Decimal Support for Sliders")
+    LogSub:AddLabel("- Added: Anti-AFK & Token Loop Control")
+    LogSub:AddLabel("- Added: Tutorial & Credits Tab")
+
+    -- 4. SUBTAB SINYAL & STATISTIK
+    local SinyalSub = BerandaTab:AddSubTab("Statistik")
 
     SinyalSub:AddSection("Koneksi & Jaringan")
     local PingLabel = SinyalSub:AddLabel("Ping: -- ms")
@@ -43,43 +61,38 @@ return function(Window)
 
     SinyalSub:AddSection("Aksi Server")
     SinyalSub:AddButton("Salin Link Server (JobId)", function()
-        setclipboard("https://www.roblox.com/games/" .. game.PlaceId .. "?jobId=" .. game.JobId)
-        Window:Notify("Link JobId disalin!", 2, "ok")
+        copyLink("JobId", "https://www.roblox.com/games/" .. game.PlaceId .. "?jobId=" .. game.JobId)
     end)
 
     -- ========================================
-    -- LOGIKA UPDATE REAL-TIME
+    -- LOGIKA UPDATE REAL-TIME (DENGAN KILL-SWITCH)
     -- ========================================
     task.spawn(function()
         local startTime = tick()
         local RunService = game:GetService("RunService")
         local Stats = game:GetService("Stats")
         
-        -- Loop cepat untuk FPS
         local fps = 0
-        RunService.RenderStepped:Connect(function(dt)
+        local conn = RunService.RenderStepped:Connect(function(dt)
             fps = math.floor(1/dt)
         end)
 
-        -- Loop 1 detik untuk label lainnya (biar tidak berat)
-        while true do
+        while _G.LatestRunToken == myToken do
             pcall(function()
-                -- 1. Update Ping
+                -- Update Ping
                 local pingValue = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-                if pingValue <= 0 then
-                    pingValue = game.Players.LocalPlayer:GetNetworkPing() * 1000
-                end
+                if pingValue <= 0 then pingValue = game.Players.LocalPlayer:GetNetworkPing() * 1000 end
                 local ping = math.floor(pingValue)
                 PingLabel:SetText("Ping: " .. ping .. " ms")
 
-                -- 2. Update FPS
+                -- Update FPS
                 FPSLabel:SetText("FPS: " .. fps)
 
-                -- 3. Kualitas Sinyal
+                -- Kualitas Sinyal
                 local kualitas = (ping < 100 and "Sangat Baik") or (ping < 200 and "Cukup Baik") or "Buruk (Lag)"
                 SinyalLabel:SetText("Kualitas: " .. kualitas)
 
-                -- 4. Server ID & Playtime
+                -- Server ID & Playtime
                 RegionLabel:SetText("Server ID: " .. string.sub(game.JobId, 1, 8))
                 
                 local diff = tick() - startTime
@@ -88,5 +101,6 @@ return function(Window)
             end)
             task.wait(1)
         end
+        conn:Disconnect() -- Bersihkan koneksi saat token berubah
     end)
 end
