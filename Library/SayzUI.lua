@@ -1429,137 +1429,143 @@ function SayzUI:CreateWindow(opts)
 				return handle
 			end
 
-			-- ===== Slider (with Get/Set handle) =====
-			function sub:AddSlider(text, minV, maxV, defaultV, callback)
-				local minN = tonumber(minV) or 0
-				local maxN = tonumber(maxV) or 100
-				if maxN == minN then maxN = minN + 1 end
-
-				local startVal = tonumber(defaultV)
-				if startVal == nil then startVal = minN end
-				startVal = clamp(startVal, minN, maxN)
-				startVal = math.floor(startVal + 0.5)
-
-				local handle = {
-					Value = startVal,
-					_apply = nil,
-					_min = minN,
-					_max = maxN,
-				}
-
-				function handle:Get()
-					return self.Value
-				end
-
-				function handle:Set(v, silent)
-					v = tonumber(v) or self.Value
-					v = clamp(v, self._min, self._max)
-					v = math.floor(v + 0.5)
-					self.Value = v
-					if self._apply then
-						self._apply(v, not silent)
-					elseif (not silent) then
-						safeCall(callback, v)
-					end
-				end
-
-				table.insert(sub._items, function()
-					local card = mk("Frame", {
-						BackgroundColor3 = Theme.Panel,
-						BorderSizePixel = 0,
-						Size = UDim2.new(1, 0, 0, 62),
-						Parent = contentArea
-					})
-					corner(card, 12)
-					stroke(card, 1, 0.65, Theme.Stroke)
-					padding(card, 12, 10, 12, 10)
-
-					local topRow = mk("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), Parent = card })
-
-					mk("TextLabel", {
-						BackgroundTransparency = 1,
-						Size = UDim2.new(1, -80, 1, 0),
-						Font = Enum.Font.GothamSemibold,
-						TextSize = 13,
-						TextXAlignment = Enum.TextXAlignment.Left,
-						TextColor3 = Theme.Text,
-						Text = tostring(text),
-						Parent = topRow
-					})
-
-					local valLbl = mk("TextLabel", {
-						BackgroundTransparency = 1,
-						AnchorPoint = Vector2.new(1, 0),
-						Position = UDim2.new(1, 0, 0, 0),
-						Size = UDim2.new(0, 80, 1, 0),
-						Font = Enum.Font.Gotham,
-						TextSize = 12,
-						TextXAlignment = Enum.TextXAlignment.Right,
-						TextColor3 = Theme.Muted,
-						Text = tostring(handle.Value),
-						Parent = topRow
-					})
-
-					local track = mk("Frame", {
-						Position = UDim2.new(0, 0, 0, 28),
-						Size = UDim2.new(1, 0, 0, 10),
-						BackgroundColor3 = Theme.Panel2,
-						BorderSizePixel = 0,
-						Parent = card
-					})
-					corner(track, 10)
-					stroke(track, 1, 0.75, Theme.Stroke)
-
-					local fill = mk("Frame", {
-						Size = UDim2.new((handle.Value - minN) / (maxN - minN), 0, 1, 0),
-						BackgroundColor3 = Theme.Accent,
-						BorderSizePixel = 0,
-						Parent = track
-					})
-					corner(fill, 10)
-
-					local function apply(v, fireCb)
-						handle.Value = v
-						valLbl.Text = tostring(handle.Value)
-						fill.Size = UDim2.new((handle.Value - minN) / (maxN - minN), 0, 1, 0)
-						if fireCb then
-							safeCall(callback, handle.Value)
-						end
-					end
-
-					handle._apply = apply
-					apply(handle.Value, false)
-
-					local dragging = false
-					local function setFromX(x, fireCb)
-						local abs = track.AbsolutePosition.X
-						local w = track.AbsoluteSize.X
-						local a = clamp((x - abs) / w, 0, 1)
-						local v = minN + (maxN - minN) * a
-						v = math.floor(v + 0.5)
-						apply(v, fireCb)
-					end
-
-					janitor:Add(track.InputBegan:Connect(function(input)
-						if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-							dragging = true
-							setFromX(input.Position.X, true)
-						end
-					end))
-					janitor:Add(track.InputEnded:Connect(function(input)
-						if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-							dragging = false
-						end
-					end))
-					janitor:Add(UIS.InputChanged:Connect(function(input)
-						if not dragging then return end
-						if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-							setFromX(input.Position.X, true)
-						end
-					end))
-				end)
-
-				return handle
+			-- ===== Slider (with Get/Set handle & Decimal Support) =====
+			function sub:AddSlider(text, minV, maxV, defaultV, callback, decimalPlaces)
+			    local minN = tonumber(minV) or 0
+			    local maxN = tonumber(maxV) or 100
+			    local precision = 10 ^ (tonumber(decimalPlaces) or 0) -- Jika 1 maka 0.1, jika 2 maka 0.01
+			    
+			    if maxN == minN then maxN = minN + 1 end
+			
+			    local startVal = tonumber(defaultV) or minN
+			    startVal = clamp(startVal, minN, maxN)
+			    
+			    -- Pembulatan awal sesuai presisi
+			    startVal = math.floor(startVal * precision) / precision
+			
+			    local handle = {
+			        Value = startVal,
+			        _apply = nil,
+			        _min = minN,
+			        _max = maxN,
+			    }
+			
+			    function handle:Get()
+			        return self.Value
+			    end
+			
+			    function handle:Set(v, silent)
+			        v = tonumber(v) or self.Value
+			        v = clamp(v, self._min, self._max)
+			        v = math.floor(v * precision) / precision -- Pembulatan desimal
+			        self.Value = v
+			        if self._apply then
+			            self._apply(v, not silent)
+			        elseif (not silent) then
+			            safeCall(callback, v)
+			        end
+			    end
+			
+			    table.insert(sub._items, function()
+			        local card = mk("Frame", {
+			            BackgroundColor3 = Theme.Panel,
+			            BorderSizePixel = 0,
+			            Size = UDim2.new(1, 0, 0, 62),
+			            Parent = contentArea
+			        })
+			        corner(card, 12)
+			        stroke(card, 1, 0.65, Theme.Stroke)
+			        padding(card, 12, 10, 12, 10)
+			
+			        local topRow = mk("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 18), Parent = card })
+			
+			        mk("TextLabel", {
+			            BackgroundTransparency = 1,
+			            Size = UDim2.new(1, -80, 1, 0),
+			            Font = Enum.Font.GothamSemibold,
+			            TextSize = 13,
+			            TextXAlignment = Enum.TextXAlignment.Left,
+			            TextColor3 = Theme.Text,
+			            Text = tostring(text),
+			            Parent = topRow
+			        })
+			
+			        local valLbl = mk("TextLabel", {
+			            BackgroundTransparency = 1,
+			            AnchorPoint = Vector2.new(1, 0),
+			            Position = UDim2.new(1, 0, 0, 0),
+			            Size = UDim2.new(0, 80, 1, 0),
+			            Font = Enum.Font.Gotham,
+			            TextSize = 12,
+			            TextXAlignment = Enum.TextXAlignment.Right,
+			            TextColor3 = Theme.Muted,
+			            Text = tostring(handle.Value),
+			            Parent = topRow
+			        })
+			
+			        local track = mk("Frame", {
+			            Position = UDim2.new(0, 0, 0, 28),
+			            Size = UDim2.new(1, 0, 0, 10),
+			            BackgroundColor3 = Theme.Panel2,
+			            BorderSizePixel = 0,
+			            Parent = card
+			        })
+			        corner(track, 10)
+			        stroke(track, 1, 0.75, Theme.Stroke)
+			
+			        local fill = mk("Frame", {
+			            Size = UDim2.new((handle.Value - minN) / (maxN - minN), 0, 1, 0),
+			            BackgroundColor3 = Theme.Accent,
+			            BorderSizePixel = 0,
+			            Parent = track
+			        })
+			        corner(fill, 10)
+			
+			        local function apply(v, fireCb)
+			            handle.Value = v
+			            valLbl.Text = tostring(handle.Value)
+			            fill.Size = UDim2.new((handle.Value - minN) / (maxN - minN), 0, 1, 0)
+			            if fireCb then
+			                safeCall(callback, handle.Value)
+			            end
+			        end
+			
+			        handle._apply = apply
+			        apply(handle.Value, false)
+			
+			        local dragging = false
+			        local function setFromX(x, fireCb)
+			            local abs = track.AbsolutePosition.X
+			            local w = track.AbsoluteSize.X
+			            local a = clamp((x - abs) / w, 0, 1)
+			            local v = minN + (maxN - minN) * a
+			            
+			            -- GANTI DISINI: Menggunakan presisi desimal
+			            v = math.floor(v * precision) / precision
+			            
+			            apply(v, fireCb)
+			        end
+			
+			        janitor:Add(track.InputBegan:Connect(function(input)
+			            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			                dragging = true
+			                setFromX(input.Position.X, true)
+			            end
+			        end))
+			        janitor:Add(UIS.InputEnded:Connect(function(input)
+			            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			                dragging = false
+			            end
+			        end))
+			        janitor:Add(UIS.InputChanged:Connect(function(input)
+			            if not dragging then return end
+			            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			                setFromX(input.Position.X, true)
+			            end
+			        end))
+			    end)
+			
+			    return handle
 			end
 
 			-- ===== Dropdown (with Get/Set handle) =====
