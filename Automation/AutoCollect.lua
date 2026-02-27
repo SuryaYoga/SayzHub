@@ -1,4 +1,17 @@
 return function(SubTab, Window)
+    -- ========================================
+    -- [0] MEMORY CLEANER (Mencegah Auto-Load)
+    -- ========================================
+    -- Kita paksa semua setting balik ke awal setiap kali script di-run
+    getgenv().AutoCollect = false
+    getgenv().TakeGems = true
+    getgenv().ItemBlacklist = {}
+    getgenv().AvoidanceStrength = 50
+    -- Reset variabel internal
+    local lockedDoors = {}
+    local badItems = {}
+    local currentPool = {}
+
     -- [[ 1. SETUP & VARIABLES ]] --
     local myToken = _G.LatestRunToken -- Token untuk Kill Switch
     local LP = game:GetService("Players").LocalPlayer
@@ -298,4 +311,5 @@ return function(SubTab, Window)
         print("Auto Collect: Loop Terminated.")
     end)
 end
+
 
