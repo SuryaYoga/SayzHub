@@ -1,5 +1,7 @@
 return function(SubTab, Window, myToken)
-    -- [[ 1. SETUP & VARIABLES ]] --
+    -- ========================================
+    -- [1] VARIABEL & SETUP
+    -- ========================================
     local PnB = getgenv().SayzSettings.PnB 
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(game.Players.LocalPlayer.PlayerScripts.PlayerMovement)
@@ -10,7 +12,12 @@ return function(SubTab, Window, myToken)
     local lockedDoors = {}
     _G.LastPnBState = "Waiting" 
 
-    -- [[ 2. PATHFINDING CORE ]] --
+    -- Inisialisasi Delay Collect jika belum ada di settings
+    PnB.CollectDelay = PnB.CollectDelay or 0.1
+
+    -- ========================================
+    -- [2] PATHFINDING CORE (SMARTPATH)
+    -- ========================================
     local function isWalkable(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false, false end
         if lockedDoors[gx .. "," .. gy] then return false, false end 
@@ -40,7 +47,8 @@ return function(SubTab, Window, myToken)
             if current.x == targetX and current.y == targetY then return current.path end
             for _, d in ipairs(directions) do
                 local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkable(nx, ny) then
+                local walkable = isWalkable(nx, ny)
+                if walkable then
                     local newTotalCost = current.cost + 1
                     if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
                         visited[nx .. "," .. ny] = newTotalCost
@@ -54,7 +62,9 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- [[ 3. UI ELEMENTS ]] --
+    -- ========================================
+    -- [3] UI ELEMENTS (LENGKAP)
+    -- ========================================
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
     getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
@@ -67,10 +77,16 @@ return function(SubTab, Window, myToken)
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed Scale", "1", function(v)
+    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed PnB Scale", "1", function(v)
         local val = tonumber(v) or 1
         PnB.DelayScale = (val < 0.1) and 0.1 or val
         PnB.ActualDelay = PnB.DelayScale * 0.12
+    end)
+
+    -- INPUT DELAY KHUSUS COLLECT (Permintaan Abang)
+    getgenv().SayzUI_Handles["PnB_CollectDelay"] = SubTab:AddInput("Collect Speed Delay", tostring(PnB.CollectDelay), function(v)
+        local val = tonumber(v)
+        if val then PnB.CollectDelay = val end
     end)
 
     getgenv().SayzUI_Handles["PnB_LockPosition"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) PnB.LockPosition = t end)
@@ -85,7 +101,9 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- [[ 4. HELPERS ]] --
+    -- ========================================
+    -- [4] FUNCTIONS HELPER
+    -- ========================================
     local function getActiveAmount()
         local total = 0
         local success, invModule = pcall(function() return require(game.ReplicatedStorage.Modules.Inventory) end)
@@ -133,7 +151,9 @@ return function(SubTab, Window, myToken)
         _G.OldHookSet = true
     end
 
-    -- [[ 5. MAIN TASK LOOP ]] --
+    -- ========================================
+    -- [5] MAIN TASK LOOP (STRICT SEQUENCE)
+    -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             if PnB.Master then
@@ -145,7 +165,7 @@ return function(SubTab, Window, myToken)
 
                     local baseGrid = (PnB.LockPosition and PnB.OriginGrid) or { x = math.floor(Hitbox.Position.X/4.5+0.5), y = math.floor(Hitbox.Position.Y/4.5+0.5) }
 
-                    -- Refresh Grid Data
+                    -- 1. Refresh & Sort Grid
                     local targets, currentFilled, selectedList = {}, 0, {}
                     for coordKey, active in pairs(PnB.SelectedTiles) do
                         if active then
@@ -162,7 +182,7 @@ return function(SubTab, Window, myToken)
                         if blockExist then currentFilled = currentFilled + 1 end
                     end
 
-                    -- 1. BREAK PHASE
+                    -- PHASE A: BREAK (Hanya hancurkan sampai bersih)
                     if PnB.Break and currentFilled > 0 then
                         _G.LastPnBState = "Breaking"
                         for _, tile in ipairs(targets) do
@@ -179,7 +199,7 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    -- 2. SMART COLLECT PHASE (Normal Speed)
+                    -- PHASE B: COLLECT (Jalan kaki jika grid kosong tapi ada item)
                     local drops = GetDropsInGrid(targets)
                     if PnB.AutoCollectInGrid and PnB.Master and #drops > 0 then
                         _G.LastPnBState = "Collecting"
@@ -193,30 +213,29 @@ return function(SubTab, Window, myToken)
                                     for _, pt in ipairs(path) do
                                         Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
                                         movementModule.Position = Hitbox.Position
-                                        -- Menggunakan StepDelay agar kecepatan sama dengan AutoCollect biasa
-                                        task.wait(getgenv().StepDelay or 0.05)
+                                        task.wait(PnB.CollectDelay) -- PAKAI DELAY INPUT USER
                                     end
                                 end
                             end
                         end
-                        -- Balik ke Origin (Kecepatan Normal)
+                        -- Balik ke Origin
                         local curX, curY = math.floor(Hitbox.Position.X/4.5+0.5), math.floor(Hitbox.Position.Y/4.5+0.5)
                         local back = findSmartPath(curX, curY, baseGrid.x, baseGrid.y)
                         if back then
                             for _, pt in ipairs(back) do
                                 Hitbox.CFrame = CFrame.new(pt.X, pt.Y, Hitbox.Position.Z)
                                 movementModule.Position = Hitbox.Position
-                                task.wait(getgenv().StepDelay or 0.05)
+                                task.wait(PnB.CollectDelay)
                             end
                         end
                     end
 
-                    -- 3. PLACE PHASE
-                    areaData, filledCount = getAreaInfo() -- Cek ulang setelah jalan-jalan
-                    local dropsLeft = #GetDropsInGrid(targets)
-                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and dropsLeft == 0)
+                    -- PHASE C: PLACE (Hanya jika Break & Collect selesai)
+                    local areaDataRef, filledCountRef = getAreaInfo()
+                    local finalDrops = GetDropsInGrid(targets)
+                    local canPlace = (not PnB.AutoCollectInGrid) or (PnB.AutoCollectInGrid and #finalDrops == 0)
 
-                    if PnB.Place and currentFilled < #targets and canPlace then
+                    if PnB.Place and filledCountRef < #targets and canPlace then
                         _G.LastPnBState = "Placing"
                         for _, tile in ipairs(targets) do
                             if _G.LatestRunToken ~= myToken or not PnB.Master then break end
@@ -228,6 +247,8 @@ return function(SubTab, Window, myToken)
                     end
                 end)
             end
+            
+            -- UPDATE VISUALS (Wajib ada biar ga dikira hapus fitur)
             pcall(function()
                 InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
                 StokLabel:SetText("Total Stok: " .. getActiveAmount())
