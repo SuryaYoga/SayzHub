@@ -1,8 +1,7 @@
-return function(SubTab, Window)
+return function(SubTab, Window, myToken)
     -- ========================================
-    -- [1] VARIABEL & SETUP (SINKRONISASI TOKEN)
+    -- [1] VARIABEL & SETUP
     -- ========================================
-    local myToken = _G.LatestRunToken -- Menangkap token unik saat script dijalankan
     local PnB = getgenv().SayzSettings.PnB 
     local worldData = require(game.ReplicatedStorage.WorldTiles)
     local LP = game.Players.LocalPlayer
@@ -10,12 +9,12 @@ return function(SubTab, Window)
     _G.LastPnBState = "Waiting" 
 
     -- ========================================
-    -- [2] UI ELEMENTS
+    -- [2] UI ELEMENTS (DENGAN HANDLES UNTUK CONFIG)
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
-    SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
-    SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
-    SubTab:AddToggle("Enable Break", PnB.Break, function(t) PnB.Break = t end)
+    getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
+    getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
+    getgenv().SayzUI_Handles["PnB_Break"] = SubTab:AddToggle("Enable Break", PnB.Break, function(t) PnB.Break = t end)
 
     SubTab:AddSection("SCANNER")
     SubTab:AddButton("Scan ID Item", function()
@@ -26,14 +25,14 @@ return function(SubTab, Window)
     local StokLabel = SubTab:AddLabel("Total Stok: 0")
 
     SubTab:AddSection("SETTING")
-    SubTab:AddInput("Speed Scale (Min 0.1)", tostring(PnB.DelayScale), function(v)
-        local val = tonumber(v) or 1
-        if val < 0.1 then val = 0.1 end
-        PnB.DelayScale = val
-        PnB.ActualDelay = val * 0.12
-    end)
+    -- Slider v3.1 Support (Decimal)
+    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddSlider("Speed Scale", 0.1, 5.0, PnB.DelayScale, function(v)
+        PnB.DelayScale = v
+        PnB.ActualDelay = v * 0.12
+    end, 1)
 
     SubTab:AddSection("GRID TARGET (5x5)")
+    -- Grid Selector tidak masuk config (biasanya diset manual per lokasi)
     SubTab:AddGridSelector(function(selectedTable)
         PnB.SelectedTiles = selectedTable
         local char = LP.Character
@@ -46,7 +45,7 @@ return function(SubTab, Window)
         end
     end)
 
-    SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) PnB.LockPosition = t end)
+    getgenv().SayzUI_Handles["PnB_LockPos"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t) PnB.LockPosition = t end)
 
     SubTab:AddButton("Refresh Position / Set Origin", function()
         local char = LP.Character
@@ -60,7 +59,7 @@ return function(SubTab, Window)
         end
     end)
 
-    SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
+    getgenv().SayzUI_Handles["PnB_BreakMode"] = SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
         PnB.BreakMode = v
     end)
 
@@ -74,6 +73,7 @@ return function(SubTab, Window)
         end)
         if success and invModule and invModule.Stacks then
             local targetIndex = tonumber(PnB.TargetID)
+            if not targetIndex then return 0 end
             local baseStack = invModule.Stacks[targetIndex]
             if baseStack and baseStack.Id then
                 local targetItemId = baseStack.Id
@@ -88,32 +88,34 @@ return function(SubTab, Window)
     end
 
     local function updatePnBVisuals()
-        if _G.LatestRunToken ~= myToken then return end -- Stop visual update jika mati
+        if _G.LatestRunToken ~= myToken then return end 
         pcall(function()
             InfoLabel:SetText("ID Aktif: " .. tostring(PnB.TargetID or "None"))
             StokLabel:SetText("Total Stok: " .. getActiveAmount())
         end)
     end
 
-    -- Hook Metamethod (Scanner)
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-        -- Scanner juga cek Token agar tidak nyangkut di memori
-        if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
-            PnB.TargetID = args[2]
-            PnB.Scanning = false
-            Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
-        end
-        return oldNamecall(self, ...)
-    end)
+    -- Hook Metamethod (Scanner dengan Kill-Switch)
+    if not _G.OldPnBHook then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+            if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
+                PnB.TargetID = args[2]
+                PnB.Scanning = false
+                Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
+            end
+            return oldNamecall(self, ...)
+        end)
+        _G.OldPnBHook = oldNamecall
+    end
 
     -- ========================================
     -- [4] MAIN LOOP (DENGAN KILL SWITCH TOKEN)
     -- ========================================
     task.spawn(function()
-        while _G.LatestRunToken == myToken do -- CEK TOKEN DI LOOP UTAMA
+        while _G.LatestRunToken == myToken do 
             if PnB.Master then
                 pcall(function()
                     local char = LP.Character
@@ -171,11 +173,10 @@ return function(SubTab, Window)
                             _G.LastPnBState = "Placing"
                             if getActiveAmount() > 0 then
                                 for _, tile in ipairs(areaData) do
-                                    -- CEK TOKEN DI DALAM FOR LOOP
                                     if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     if not tile.isFilled then
                                         game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
-                                        task.wait(PnB.PlaceDelay)
+                                        task.wait(PnB.PlaceDelay or 0.05)
                                     end
                                 end
                             end
@@ -190,11 +191,9 @@ return function(SubTab, Window)
                             _G.LastPnBState = "Breaking"
                             if PnB.BreakMode == "Mode 1 (Fokus)" then
                                 for _, tile in ipairs(areaData) do
-                                    -- CEK TOKEN SEBELUM PINDAH BLOK
                                     if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     if tile.isFilled then
                                         while PnB.Master and PnB.Break do
-                                            -- CEK TOKEN SAAT MUKUL (SANGAT PENTING!)
                                             if _G.LatestRunToken ~= myToken then break end
                                             local check = worldData[tile.pos.X] and worldData[tile.pos.X][tile.pos.Y] and worldData[tile.pos.X][tile.pos.Y][tile.layer]
                                             if check == nil then break end 
@@ -229,4 +228,7 @@ return function(SubTab, Window)
         end
         print("PnB: Loop terminated safely.")
     end)
+    
+    SubTab:AddSection("TUTORIAL")
+    SubTab:AddParagraph("Cara Pakai", "1. Klik Scan ID.\n2. Pasang blok manual.\n3. Pilih grid target.\n4. Nyalakan Master Switch.")
 end
