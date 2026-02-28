@@ -92,36 +92,14 @@ return function(SubTab, Window, myToken)
         return true, hasBlacklist  -- tile kosong
     end
 
-    -- isWalkable versi strict: item filter = hard block (untuk seleksi kandidat)
-    local function isWalkableStrict(gx, gy)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
-            return false
-        end
-        if lockedDoors[gx .. "," .. gy] then
-            return false
-        end
-        if hasBlacklistedItemAt(gx, gy) then
-            return false  -- item filter = hard block di mode strict
-        end
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                if isPassableTile(n) then
-                    return true
-                end
-                return false
-            end
-        end
-        return true
-    end
+
 
     -- =============================================
     -- [[ 3. PATHFINDING ]]
+    -- findSmartPath: ganti table.sort tiap iterasi
+    -- → linear scan cari minimum (lebih ringan)
     -- =============================================
 
-    -- Pathfinding standar (soft avoidance item filter via cost)
     local function findSmartPath(startX, startY, targetX, targetY)
         local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
         local visited = {[startX .. "," .. startY] = 0}
@@ -135,8 +113,15 @@ return function(SubTab, Window, myToken)
             limitCount = limitCount + 1
             if limitCount > 4000 then break end
 
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
+            -- Linear scan cari node cost terendah (O(n) vs O(n log n) sort)
+            local minIdx, minCost = 1, queue[1].cost
+            for i = 2, #queue do
+                if queue[i].cost < minCost then
+                    minCost = queue[i].cost
+                    minIdx  = i
+                end
+            end
+            local current = table.remove(queue, minIdx)
 
             if current.x == targetX and current.y == targetY then
                 return current.path
@@ -160,60 +145,50 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- Pathfinding strict (item filter = hard block, untuk cek kandidat item)
-    local function findStrictPath(startX, startY, targetX, targetY)
-        local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
-        local visited = {[startX .. "," .. startY] = 0}
-        local dirs    = {
-            {x=1,y=0},{x=-1,y=0},
-            {x=0,y=1},{x=0,y=-1}
-        }
-        local limitCount = 0
-        while #queue > 0 do
-            if _G.LatestRunToken ~= myToken then break end
-            limitCount = limitCount + 1
-            if limitCount > 4000 then break end
+    -- =============================================
+    -- [[ 4. RAYCAST GRID (seleksi kandidat) ]]
+    -- Cek lurus dari (sx,sy) ke (tx,ty) tile per tile.
+    -- Kalau ada solid tile atau item filter di tengah = blocked.
+    -- Ringan: O(distance), tidak perlu queue/sort sama sekali.
+    -- =============================================
 
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
+    local function raycastClear(sx, sy, tx, ty)
+        local dx = tx - sx
+        local dy = ty - sy
+        local steps = math.max(math.abs(dx), math.abs(dy))
+        if steps == 0 then return true end
 
-            if current.x == targetX and current.y == targetY then
-                return current.path
-            end
+        for i = 1, steps - 1 do  -- tidak cek tile start dan tile target
+            local cx = math.floor(sx + (dx / steps) * i + 0.5)
+            local cy = math.floor(sy + (dy / steps) * i + 0.5)
 
-            for _, d in ipairs(dirs) do
-                local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkableStrict(nx, ny) then
-                    local newCost = current.cost + 1
-                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
-                        visited[nx..","..ny] = newCost
-                        local newPath = {unpack(current.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
-                    end
-                end
-            end
+            -- Cek solid tile
+            local walkable, _ = isWalkable(cx, cy)
+            if not walkable then return false end
+
+            -- Cek item filter (hard block untuk seleksi)
+            if hasBlacklistedItemAt(cx, cy) then return false end
         end
-        return nil
+        return true
     end
 
     -- =============================================
-    -- [[ 4. ITEM SELECTION ]]
-    -- "Furthest reachable without forced filter crossing"
+    -- [[ 5. ITEM SELECTION ]]
+    -- Raycast tiap kandidat → pilih paling jauh yang bersih
     -- =============================================
 
     local function GetBestTarget(Hitbox)
-        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if not root then return nil end
-
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
 
         local folders = {"Drops"}
         if getgenv().TakeGems then table.insert(folders, "Gems") end
 
-        -- Kumpulkan semua kandidat item
-        local candidates = {}
+        local bestItem = nil
+        local bestDist = -1
+        local fallbackItem = nil
+        local fallbackDist = math.huge
+
         for _, folder in pairs(folders) do
             local container = workspace:FindFirstChild(folder)
             if container then
@@ -221,44 +196,36 @@ return function(SubTab, Window, myToken)
                     if not badItems[item] then
                         local id = item:GetAttribute("id") or item.Name
                         if not getgenv().ItemBlacklist[id] then
-                            local pos = item:GetPivot().Position
-                            table.insert(candidates, {
-                                item = item,
-                                tx = math.floor(pos.X / 4.5 + 0.5),
-                                ty = math.floor(pos.Y / 4.5 + 0.5),
-                                dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(
-                                    Hitbox.Position.X, Hitbox.Position.Y
-                                )).Magnitude
-                            })
+                            local pos  = item:GetPivot().Position
+                            local tx   = math.floor(pos.X / 4.5 + 0.5)
+                            local ty   = math.floor(pos.Y / 4.5 + 0.5)
+                            local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(
+                                Hitbox.Position.X, Hitbox.Position.Y
+                            )).Magnitude
+
+                            -- Raycast: bersih dari solid & item filter?
+                            if raycastClear(sx, sy, tx, ty) then
+                                -- Kandidat bersih → pilih paling jauh
+                                if dist > bestDist then
+                                    bestDist = dist
+                                    bestItem = item
+                                end
+                            else
+                                -- Tidak bersih → simpan sebagai fallback nearest
+                                if dist < fallbackDist then
+                                    fallbackDist = dist
+                                    fallbackItem = item
+                                end
+                            end
                         end
                     end
                 end
             end
         end
 
-        if #candidates == 0 then return nil end
-
-        -- Filter: hanya yang ada jalur strict (tanpa paksa tembus filter)
-        local reachable = {}
-        for _, c in ipairs(candidates) do
-            if _G.LatestRunToken ~= myToken then break end
-            local path = findStrictPath(sx, sy, c.tx, c.ty)
-            if path then
-                c.strictPath = path
-                table.insert(reachable, c)
-            end
-        end
-
-        -- Kalau tidak ada yang reachable strict, fallback ke nearest biasa
-        if #reachable == 0 then
-            table.sort(candidates, function(a, b) return a.dist < b.dist end)
-            return candidates[1].item
-        end
-
-        -- Dari yang reachable, pilih yang PALING JAUH
-        -- (bot jalan ke sana, item di tengah keambil otomatis)
-        table.sort(reachable, function(a, b) return a.dist > b.dist end)
-        return reachable[1].item
+        -- Prioritas: kandidat bersih paling jauh
+        -- Fallback: nearest biasa kalau semua terhalang
+        return bestItem or fallbackItem
     end
 
     -- =============================================
