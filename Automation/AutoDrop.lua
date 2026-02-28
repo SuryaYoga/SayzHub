@@ -409,10 +409,7 @@ return function(SubTab, Window, myToken)
         return true
     end
 
-    local function DoDropAll()
-        -- Snapshot state UI sebelum drop
-        local snapshot = SnapshotUI()
-
+    local function DoDropAll(snapshot)
         while _G.LatestRunToken == myToken and Drop.Enabled do
             local current = GetItemAmount(Drop.TargetID)
             local toDrop  = current - Drop.KeepAmount
@@ -475,15 +472,18 @@ return function(SubTab, Window, myToken)
                         return
                     end
 
+                    -- Snapshot UI sebelum apapun dimulai
+                    local uiSnapshot = SnapshotUI()
+
                     -- [1] Jalan ke drop point
                     StatusLabel:SetText(string.format("Status: Ke Drop Point (%d,%d)...", Drop.DropPoint.x, Drop.DropPoint.y))
                     WalkToPoint(Drop.DropPoint.x, Drop.DropPoint.y)
 
-                    -- [2] Cek lagi toggle setelah jalan (bisa dimatikan di tengah jalan)
+                    -- [2] Cek lagi toggle setelah jalan
                     if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
 
-                    -- [3] Eksekusi drop
-                    DoDropAll()
+                    -- [3] Eksekusi drop (kirim snapshot yang sudah diambil sebelum jalan)
+                    DoDropAll(uiSnapshot)
 
                     -- [4] Balik ke return point
                     if Drop.Enabled and _G.LatestRunToken == myToken then
