@@ -258,37 +258,59 @@ return function(SubTab, Window, myToken)
         -- Kalau sudah sampai, tidak perlu pathfind
         if sx == targetX and sy == targetY then return end
 
-        local path = findSmartPath(sx, sy, targetX, targetY)
-        if not path then
-            -- Fallback: jalan lurus kalau path tidak ditemukan
-            warn("AutoDrop: SmartPath gagal, skip jalan.")
-            return
-        end
+        -- Loop pathfind ulang sampai sampai atau toggle mati
+        local maxRetry = 10
+        local retry = 0
+        while _G.LatestRunToken == myToken and Drop.Enabled do
+            local curX = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
+            local curY = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
+            if curX == targetX and curY == targetY then break end
 
-        for i, point in ipairs(path) do
-            -- [FIX] Cek toggle DAN token di setiap step — langsung berhenti kalau dimatikan
-            if not Drop.Enabled or _G.LatestRunToken ~= myToken then break end
+            retry = retry + 1
+            if retry > maxRetry then
+                warn("AutoDrop: Tidak bisa sampai tujuan setelah " .. maxRetry .. "x pathfind.")
+                break
+            end
 
-            StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
-            MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
-            pcall(function()
-                if movementModule then
-                    movementModule.Position = MyHitbox.Position
-                end
-            end)
-            task.wait(Drop.StepDelay)
+            local path = findSmartPath(curX, curY, targetX, targetY)
+            if not path then
+                warn("AutoDrop: SmartPath gagal, tidak ada jalur tersisa.")
+                break
+            end
 
-            -- Deteksi stuck pintu (sama dengan AutoCollect)
-            local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-            if char then
-                local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                if dist > 5 then
-                    local px = math.floor(point.X / 4.5 + 0.5)
-                    local py = math.floor(point.Y / 4.5 + 0.5)
-                    lockedDoors[px .. "," .. py] = true
-                    break
+            local stuck = false
+            for i, point in ipairs(path) do
+                if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
+
+                StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
+                MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
+                pcall(function()
+                    if movementModule then movementModule.Position = MyHitbox.Position end
+                end)
+                task.wait(Drop.StepDelay)
+
+                -- Deteksi stuck pintu
+                local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if char then
+                    local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
+                    if dist > 5 then
+                        local px = math.floor(point.X / 4.5 + 0.5)
+                        local py = math.floor(point.Y / 4.5 + 0.5)
+                        local key = px .. "," .. py
+                        -- Simpan ke lokal DAN ke shared agar AutoCollect juga tahu
+                        lockedDoors[key] = true
+                        if getgenv().SayzShared and getgenv().SayzShared.lockedDoors then
+                            getgenv().SayzShared.lockedDoors[key] = true
+                        end
+                        stuck = true
+                        break
+                    end
                 end
             end
+
+            -- Kalau tidak stuck berarti sudah selesai jalan
+            if not stuck then break end
+            -- Stuck → pathfind ulang dengan jalur yang sudah diblok
         end
     end
 
