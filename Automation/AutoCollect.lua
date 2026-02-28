@@ -248,8 +248,8 @@ return function(SubTab, Window, myToken)
     end)
 
     -- [[ 5. EXPORT SHARED FUNCTIONS ]] --
-    -- Dibagikan ke modul lain (AutoDrop, dll) lewat getgenv()
-    getgenv().SayzShared = getgenv().SayzShared or {}
+    -- Reset setiap re-execute agar AutoDrop selalu dapat referensi terbaru
+    getgenv().SayzShared = {}
     getgenv().SayzShared.findSmartPath = findSmartPath
     getgenv().SayzShared.isWalkable    = isWalkable
     getgenv().SayzShared.lockedDoors   = lockedDoors
