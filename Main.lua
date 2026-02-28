@@ -21,6 +21,7 @@ InitAntiAFK()
 
 -- [FIX-2] Reset OldHookSet setiap re-execute agar hook scanner terpasang ulang
 _G.OldHookSet = false
+_G.AutoDropHookSet = false
 
 -- [[ 3. CONFIGURATION ]] --
 getgenv().SayzConfig = {
@@ -80,6 +81,7 @@ local Window = SayzUI:CreateWindow({
         _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
         -- [FIX-2] Reset flag hook saat ditutup agar re-execute bersih
         _G.OldHookSet = false
+        _G.AutoDropHookSet = false
         getgenv().SayzSettings = nil
         getgenv().SayzUI_Handles = nil
         print("SayzHub: Stopped and Cleaned.")
