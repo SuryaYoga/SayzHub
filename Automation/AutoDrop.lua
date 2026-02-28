@@ -350,13 +350,26 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    local function ForceRestoreUI()
+    -- Snapshot state UI sebelum drop, restore setelahnya
+    local function SnapshotUI()
+        local snapshot = {}
+        pcall(function()
+            for _, gui in pairs(LP.PlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") then
+                    snapshot[gui.Name] = gui.Enabled
+                end
+            end
+        end)
+        return snapshot
+    end
+
+    local function RestoreUIFromSnapshot(snapshot)
+        -- Tutup prompt dulu
         pcall(function()
             if UIManager and type(UIManager.ClosePrompt) == "function" then
                 UIManager:ClosePrompt()
             end
         end)
-        -- Sembunyikan frame prompt yang masih keliatan
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
                 if gui:IsA("Frame") and string.find(string.lower(gui.Name), "prompt") then
@@ -365,26 +378,11 @@ return function(SubTab, Window, myToken)
             end
         end)
         task.wait(0.1)
-        -- Restore UIManager
-        pcall(function()
-            if UIManager then
-                if type(UIManager.ShowHUD) == "function" then UIManager:ShowHUD() end
-                if type(UIManager.ShowUI)  == "function" then UIManager:ShowUI()  end
-            end
-        end)
-        -- Restore SEMUA ScreenGui yang bukan prompt (termasuk SayzHub_UI)
+        -- Restore ke state sebelum drop
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetChildren()) do
-                if gui:IsA("ScreenGui") then
-                    local nameLower = string.lower(gui.Name)
-                    -- Jangan restore yang memang harusnya false (prompt, hover, dll)
-                    local isPrompt = string.find(nameLower, "prompt")
-                        or string.find(nameLower, "hover")
-                        or string.find(nameLower, "freecam")
-                        or string.find(nameLower, "bubblechat")
-                    if not isPrompt then
-                        gui.Enabled = true
-                    end
+                if gui:IsA("ScreenGui") and snapshot[gui.Name] ~= nil then
+                    gui.Enabled = snapshot[gui.Name]
                 end
             end
         end)
@@ -412,6 +410,9 @@ return function(SubTab, Window, myToken)
     end
 
     local function DoDropAll()
+        -- Snapshot state UI sebelum drop
+        local snapshot = SnapshotUI()
+
         while _G.LatestRunToken == myToken and Drop.Enabled do
             local current = GetItemAmount(Drop.TargetID)
             local toDrop  = current - Drop.KeepAmount
@@ -428,7 +429,9 @@ return function(SubTab, Window, myToken)
 
             task.wait(Drop.DropDelay)
         end
-        ForceRestoreUI()
+
+        -- Restore UI ke state sebelum drop
+        RestoreUIFromSnapshot(snapshot)
     end
 
     -- ========================================
