@@ -6,6 +6,9 @@ return function(SubTab, Window, myToken)
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local LP                = Players.LocalPlayer
 
+    local WorldTiles    = require(ReplicatedStorage.WorldTiles)
+    local movementModule = require(LP.PlayerScripts.PlayerMovement)
+
     local Remotes       = ReplicatedStorage:WaitForChild("Remotes")
     local Managers      = ReplicatedStorage:WaitForChild("Managers")
     local PlayerDrop    = Remotes:FindFirstChild("PlayerDrop")
@@ -17,9 +20,7 @@ return function(SubTab, Window, myToken)
     local InventoryMod
     pcall(function() InventoryMod = require(ReplicatedStorage.Modules.Inventory) end)
 
-    local movementModule
-    pcall(function() movementModule = require(LP.PlayerScripts:WaitForChild("PlayerMovement")) end)
-
+    -- State
     local Drop = {
         Enabled     = false,
         MaxStack    = 200,
@@ -33,19 +34,77 @@ return function(SubTab, Window, myToken)
     }
     getgenv().SayzSettings.AutoDrop = Drop
 
-    -- Map limits & lockedDoors (shared dengan AutoCollect kalau sudah load)
-    -- ========================================
-    -- [4] WALK TO POINT
-    -- 100% pakai findSmartPath + lockedDoors dari AutoCollect (SayzShared)
-    -- Tidak ada duplikat logic di sini
-    -- ========================================
-    local function WalkToPoint(targetX, targetY)
-        local shared = getgenv().SayzShared
-        if not shared or not shared.findSmartPath then
-            warn("AutoDrop: AutoCollect belum diload, WalkToPoint tidak bisa jalan.")
-            return
-        end
+    -- Pathfinding state (baru setiap load, tidak ada shared)
+    local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
+    local SOLID_TILES = {
+        bedrock = true, dirt = true, stone = true,
+        gravel = true, small_lock = true,
+    }
+    local lockedDoors = {}
 
+    -- ========================================
+    -- [2] PATHFINDING (identik AutoCollect)
+    -- ========================================
+    local function isWalkable(gx, gy)
+        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
+            return false
+        end
+        if lockedDoors[gx .. "," .. gy] then
+            return false
+        end
+        if WorldTiles[gx] and WorldTiles[gx][gy] then
+            local l1 = WorldTiles[gx][gy][1]
+            local itemName = (type(l1) == "table") and l1[1] or l1
+            if itemName then
+                local n = string.lower(tostring(itemName))
+                if SOLID_TILES[n] then return false end
+                return true
+            end
+        end
+        return true
+    end
+
+    local function findSmartPath(startX, startY, targetX, targetY)
+        local queue    = {{x = startX, y = startY, path = {}, cost = 0}}
+        local visited  = {[startX .. "," .. startY] = 0}
+        local dirs     = {
+            {x=1,y=0},{x=-1,y=0},
+            {x=0,y=1},{x=0,y=-1}
+        }
+        local limitCount = 0
+        while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
+            limitCount = limitCount + 1
+            if limitCount > 4000 then break end
+
+            table.sort(queue, function(a, b) return a.cost < b.cost end)
+            local current = table.remove(queue, 1)
+
+            if current.x == targetX and current.y == targetY then
+                return current.path
+            end
+
+            for _, d in ipairs(dirs) do
+                local nx, ny = current.x + d.x, current.y + d.y
+                if isWalkable(nx, ny) then
+                    local newCost = current.cost + 1
+                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
+                        visited[nx..","..ny] = newCost
+                        local newPath = {unpack(current.path)}
+                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
+                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    -- ========================================
+    -- [3] WALK TO POINT
+    -- Loop pathfind ulang saat stuck, identik dengan AutoCollect
+    -- ========================================
+    local function WalkToPoint(targetX, targetY, StatusLabel)
         local HitboxFolder = workspace:FindFirstChild("Hitbox")
         local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
         if not MyHitbox then return end
@@ -60,17 +119,10 @@ return function(SubTab, Window, myToken)
             if curX == targetX and curY == targetY then break end
 
             retry = retry + 1
-            if retry > maxRetry then
-                warn("AutoDrop: Tidak bisa sampai tujuan setelah " .. maxRetry .. "x pathfind.")
-                break
-            end
+            if retry > maxRetry then break end
 
-            -- Pakai findSmartPath milik AutoCollect langsung
-            local path = shared.findSmartPath(curX, curY, targetX, targetY)
-            if not path then
-                warn("AutoDrop: Tidak ada jalur tersisa.")
-                break
-            end
+            local path = findSmartPath(curX, curY, targetX, targetY)
+            if not path then break end
 
             local stuck = false
             for i, point in ipairs(path) do
@@ -78,28 +130,33 @@ return function(SubTab, Window, myToken)
 
                 StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
                 MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
-                pcall(function()
-                    if movementModule then movementModule.Position = MyHitbox.Position end
-                end)
+                movementModule.Position = MyHitbox.Position
                 task.wait(Drop.StepDelay)
 
-                -- Deteksi stuck pintu — tulis langsung ke lockedDoors AutoCollect
+                -- Deteksi stuck pintu (sama dengan AutoCollect)
                 local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                 if char then
                     local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
                     if dist > 5 then
-                        local key = math.floor(point.X/4.5+0.5) .. "," .. math.floor(point.Y/4.5+0.5)
-                        shared.lockedDoors[key] = true  -- tulis ke tabel AutoCollect langsung
+                        local px = math.floor(point.X / 4.5 + 0.5)
+                        local py = math.floor(point.Y / 4.5 + 0.5)
+                        lockedDoors[px .. "," .. py] = true
                         stuck = true
                         break
                     end
                 end
             end
 
+            -- Tidak stuck = sudah sampai
             if not stuck then break end
-            -- stuck → pathfind ulang, pintu sudah diblok di lockedDoors AutoCollect
+            -- Stuck = pathfind ulang dengan lockedDoors yang sudah diupdate
         end
     end
+
+    -- ========================================
+    -- [4] UI ELEMENTS
+    -- ========================================
+    SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["AutoDrop_Master"] = SubTab:AddToggle("Enable Auto Drop", Drop.Enabled, function(t)
         Drop.Enabled = t
     end)
@@ -130,7 +187,7 @@ return function(SubTab, Window, myToken)
 
     SubTab:AddSection("POSISI")
 
-    -- Label dideklarasi DULUAN agar bisa diupdate dari callback tombol
+    -- Label dideklarasi duluan agar bisa diupdate dari callback tombol
     local DropPointLabel   = SubTab:AddLabel("Drop Point  : Belum diset")
     local ReturnPointLabel = SubTab:AddLabel("Return Point: Belum diset")
 
@@ -224,7 +281,8 @@ return function(SubTab, Window, myToken)
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
     -- ========================================
-    -- [3] SCAN HOOK
+    -- [5] SCAN HOOK
+    -- Intercept PlayerDrop:FireServer() saat Scanning = true
     -- ========================================
     if not _G.AutoDropHookSet then
         local oldNamecall
@@ -249,95 +307,6 @@ return function(SubTab, Window, myToken)
         end)
         _G.AutoDropHookSet = true
     end
-
-    -- ========================================
-    -- [5] WALK TO POINT (SmartPath + ModFly + cek toggle)
-    -- ========================================
-    local function WalkToPoint(targetX, targetY)
-        local HitboxFolder = workspace:FindFirstChild("Hitbox")
-        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
-        if not MyHitbox then return end
-
-        local startZ = MyHitbox.Position.Z
-        local sx = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
-        local sy = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-
-        -- Kalau sudah sampai, tidak perlu pathfind
-        if sx == targetX and sy == targetY then return end
-
-        -- Loop pathfind ulang sampai sampai atau toggle mati
-        local maxRetry = 10
-        local retry = 0
-        while _G.LatestRunToken == myToken and Drop.Enabled do
-            local curX = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
-            local curY = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-            if curX == targetX and curY == targetY then break end
-
-            retry = retry + 1
-            if retry > maxRetry then
-                warn("AutoDrop: Tidak bisa sampai tujuan setelah " .. maxRetry .. "x pathfind.")
-                break
-            end
-
-            local path = findSmartPath(curX, curY, targetX, targetY)
-            if not path then
-                warn("AutoDrop: SmartPath gagal, tidak ada jalur tersisa.")
-                break
-            end
-
-            local stuck = false
-            for i, point in ipairs(path) do
-                if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
-
-                StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
-                MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
-                pcall(function()
-                    if movementModule then movementModule.Position = MyHitbox.Position end
-                end)
-                task.wait(Drop.StepDelay)
-
-                -- Deteksi stuck pintu
-                local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                if char then
-                    local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                    if dist > 5 then
-                        local px = math.floor(point.X / 4.5 + 0.5)
-                        local py = math.floor(point.Y / 4.5 + 0.5)
-                        local key = px .. "," .. py
-                        -- Simpan ke lokal DAN ke shared agar AutoCollect juga tahu
-                        lockedDoors[key] = true
-                        if getgenv().SayzShared and getgenv().SayzShared.lockedDoors then
-                            getgenv().SayzShared.lockedDoors[key] = true
-                        end
-                        stuck = true
-                        break
-                    end
-                end
-            end
-
-            -- Kalau tidak stuck berarti sudah selesai jalan
-            if not stuck then break end
-            -- Stuck → pathfind ulang dengan jalur yang sudah diblok
-        end
-    end
-
-    -- ModFly: bypass gravity saat Auto Drop sedang jalan
-    -- (sama persis seperti di AutoCollect)
-    task.spawn(function()
-        while _G.LatestRunToken == myToken do
-            task.wait()
-            if Drop.Enabled then
-                pcall(function()
-                    if movementModule and movementModule.VelocityY < 0 then
-                        movementModule.VelocityY = 0
-                    end
-                    if movementModule then
-                        movementModule.Grounded = true
-                    end
-                end)
-            end
-        end
-    end)
 
     -- ========================================
     -- [6] CORE DROP FUNCTIONS
@@ -369,7 +338,6 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- Snapshot state UI sebelum drop, restore setelahnya
     local function SnapshotUI()
         local snapshot = {}
         pcall(function()
@@ -383,7 +351,6 @@ return function(SubTab, Window, myToken)
     end
 
     local function RestoreUIFromSnapshot(snapshot)
-        -- Tutup prompt dulu
         pcall(function()
             if UIManager and type(UIManager.ClosePrompt) == "function" then
                 UIManager:ClosePrompt()
@@ -397,7 +364,6 @@ return function(SubTab, Window, myToken)
             end
         end)
         task.wait(0.1)
-        -- Restore ke state sebelum drop
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetChildren()) do
                 if gui:IsA("ScreenGui") and snapshot[gui.Name] ~= nil then
@@ -445,23 +411,23 @@ return function(SubTab, Window, myToken)
 
             task.wait(Drop.DropDelay)
         end
-
-        -- Restore UI ke state sebelum drop
         RestoreUIFromSnapshot(snapshot)
     end
 
     -- ========================================
-    -- [7] EXPORT SHARED FUNCTIONS
-    -- Dibagikan ke AutoPnB (dan modul lain) lewat getgenv()
+    -- [7] GRAVITY BYPASS (identik AutoCollect)
     -- ========================================
-    getgenv().SayzShared = getgenv().SayzShared or {}
-    getgenv().SayzShared.AutoDrop = {
-        Drop          = Drop,
-        GetItemAmount = GetItemAmount,
-        GetSlotByItemID = GetSlotByItemID,
-        DoDropAll     = DoDropAll,
-        WalkToPoint   = WalkToPoint,
-    }
+    task.spawn(function()
+        while _G.LatestRunToken == myToken do
+            task.wait()
+            if Drop.Enabled then
+                pcall(function()
+                    if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
+                    movementModule.Grounded = true
+                end)
+            end
+        end
+    end)
 
     -- ========================================
     -- [8] LABEL UPDATE REAL-TIME
@@ -509,18 +475,18 @@ return function(SubTab, Window, myToken)
 
                     -- [1] Jalan ke drop point
                     StatusLabel:SetText(string.format("Status: Ke Drop Point (%d,%d)...", Drop.DropPoint.x, Drop.DropPoint.y))
-                    WalkToPoint(Drop.DropPoint.x, Drop.DropPoint.y)
+                    WalkToPoint(Drop.DropPoint.x, Drop.DropPoint.y, StatusLabel)
 
-                    -- [2] Cek lagi toggle setelah jalan
+                    -- [2] Cek toggle setelah jalan
                     if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
 
-                    -- [3] Eksekusi drop (kirim snapshot yang sudah diambil sebelum jalan)
+                    -- [3] Drop
                     DoDropAll(uiSnapshot)
 
                     -- [4] Balik ke return point
                     if Drop.Enabled and _G.LatestRunToken == myToken then
                         StatusLabel:SetText(string.format("Status: Balik ke (%d,%d)...", Drop.ReturnPoint.x, Drop.ReturnPoint.y))
-                        WalkToPoint(Drop.ReturnPoint.x, Drop.ReturnPoint.y)
+                        WalkToPoint(Drop.ReturnPoint.x, Drop.ReturnPoint.y, StatusLabel)
                         StatusLabel:SetText("Status: Monitoring...")
                     end
                 end)
