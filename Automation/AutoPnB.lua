@@ -261,18 +261,28 @@ return function(SubTab, Window, myToken)
             return require(game.ReplicatedStorage.Modules.Inventory)
         end)
         if success and invModule and invModule.Stacks then
-            local targetIndex = tonumber(PnB.TargetID)
-            local baseStack = invModule.Stacks[targetIndex]
-            if baseStack and baseStack.Id then
-                local targetItemId = baseStack.Id
-                for _, stack in pairs(invModule.Stacks) do
-                    if stack and stack.Id == targetItemId then
-                        total = total + (stack.Amount or 0)
-                    end
+            for _, stack in pairs(invModule.Stacks) do
+                if stack and tostring(stack.Id) == tostring(PnB.TargetID) then
+                    total = total + (stack.Amount or 0)
                 end
             end
         end
         return total
+    end
+
+    -- Cari slot index fresh berdasarkan string ID (dipanggil tiap mau place)
+    local function getSlotByPnBID()
+        if not InventoryMod or not InventoryMod.Stacks then return nil end
+        for slotIndex, data in pairs(InventoryMod.Stacks) do
+            if type(data) == "table" and data.Id then
+                if tostring(data.Id) == tostring(PnB.TargetID) then
+                    if not data.Amount or data.Amount > 0 then
+                        return slotIndex
+                    end
+                end
+            end
+        end
+        return nil
     end
 
     local function updatePnBVisuals()
@@ -307,10 +317,17 @@ return function(SubTab, Window, myToken)
             local method = getnamecallmethod()
             local args = {...}
             -- PnB scanner (place item)
+            -- args[1] = Vector2 pos, args[2] = slot index
             if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
-                PnB.TargetID = args[2]
-                PnB.Scanning = false
-                Window:Notify("ID Scanned: " .. tostring(args[2]), 2, "ok")
+                local slotIndex = args[2]
+                if slotIndex and InventoryMod and InventoryMod.Stacks then
+                    local data = InventoryMod.Stacks[slotIndex]
+                    if data and data.Id then
+                        PnB.TargetID = tostring(data.Id)  -- simpan string ID stabil, bukan slot index
+                        PnB.Scanning = false
+                        Window:Notify("ID Scanned: " .. PnB.TargetID, 2, "ok")
+                    end
+                end
             end
             -- Drop scanner (drop item)
             if _G.LatestRunToken == myToken and DropSettings.Scanning and method == "FireServer" then
@@ -964,7 +981,11 @@ return function(SubTab, Window, myToken)
                                 for _, tile in ipairs(areaData) do
                                     if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     if not tile.isFilled and PnB.Master then
-                                        game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, PnB.TargetID, 1)
+                                        -- Cari slot index fresh tiap iterasi agar tidak salah item
+                                        local slotIndex = getSlotByPnBID()
+                                        if slotIndex then
+                                            game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, slotIndex, 1)
+                                        end
                                         task.wait(PnB.PlaceDelay)
                                     end
                                 end
