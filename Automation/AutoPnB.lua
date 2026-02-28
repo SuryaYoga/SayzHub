@@ -52,12 +52,26 @@ return function(SubTab, Window, myToken)
     -- [2] UI ELEMENTS
     -- ========================================
 
+    -- ─────────────────────────────────────────
+    -- SEKSI 1: EKSEKUSI
+    -- ─────────────────────────────────────────
     SubTab:AddSection("EKSEKUSI")
-    getgenv().SayzUI_Handles["PnB_Master"] = SubTab:AddToggle("Master Switch", PnB.Master, function(t) PnB.Master = t end)
-    getgenv().SayzUI_Handles["PnB_Place"] = SubTab:AddToggle("Enable Place", PnB.Place, function(t) PnB.Place = t end)
-    getgenv().SayzUI_Handles["PnB_Break"] = SubTab:AddToggle("Enable Break", PnB.Break, function(t) PnB.Break = t end)
+    getgenv().SayzUI_Handles["PnB_Master"]    = SubTab:AddToggle("Master Switch",  PnB.Master, function(t) PnB.Master = t end)
+    getgenv().SayzUI_Handles["PnB_Break"]     = SubTab:AddToggle("Enable Break",   PnB.Break,  function(t) PnB.Break  = t end)
+    getgenv().SayzUI_Handles["PnB_Place"]     = SubTab:AddToggle("Enable Place",   PnB.Place,  function(t) PnB.Place  = t end)
 
-    SubTab:AddSection("SMART COLLECT (Integrasi PnB)")
+    -- Scan item PnB (place) & stok info
+    SubTab:AddButton("Scan ID Item (Pasang 1 Blok Manual)", function()
+        PnB.Scanning = true
+        Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
+    end)
+    local InfoLabel = SubTab:AddLabel("ID Aktif   : None")
+    local StokLabel = SubTab:AddLabel("Total Stok : 0")
+
+    -- ─────────────────────────────────────────
+    -- SEKSI 2: SMART COLLECT
+    -- ─────────────────────────────────────────
+    SubTab:AddSection("SMART COLLECT")
     getgenv().SayzUI_Handles["SmartCollect_PnB"] = SubTab:AddToggle("Enable Smart Collect (Setelah Break)", getgenv().SmartCollect_Enabled, function(t)
         getgenv().SmartCollect_Enabled = t
         if t then
@@ -73,25 +87,64 @@ return function(SubTab, Window, myToken)
             end
         end
     end)
-    getgenv().SayzUI_Handles["TakeGems_PnB"] = SubTab:AddToggle("Collect Gems (Smart Collect)", getgenv().TakeGems_PnB, function(t)
+    getgenv().SayzUI_Handles["TakeGems_PnB"] = SubTab:AddToggle("Collect Gems", getgenv().TakeGems_PnB, function(t)
         getgenv().TakeGems_PnB = t
     end)
-    getgenv().SayzUI_Handles["StepDelaySlider_PnB"] = SubTab:AddSlider("Movement Speed (Smart Collect)", 0.01, 0.2, getgenv().StepDelay, function(val)
+    getgenv().SayzUI_Handles["StepDelaySlider_PnB"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, getgenv().StepDelay, function(val)
         getgenv().StepDelay = val
     end, 2)
-
     local CollectStatusLabel = SubTab:AddLabel("Collect Status: Idle")
 
-    -- ========================================
-    -- AUTO DROP SECTION
-    -- ========================================
-    SubTab:AddSection("AUTO DROP (Integrasi PnB)")
+    -- ─────────────────────────────────────────
+    -- SEKSI 3: SETTING (PnB)
+    -- ─────────────────────────────────────────
+    SubTab:AddSection("SETTING")
+    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
+        local val = tonumber(v) or 1
+        if val < 0.1 then val = 0.1 end
+        PnB.DelayScale  = val
+        PnB.ActualDelay = val * 0.12
+    end)
+    getgenv().SayzUI_Handles["PnB_BreakMode"] = SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
+        PnB.BreakMode = v
+    end)
 
+    SubTab:AddSection("GRID TARGET (5x5)")
+    SubTab:AddGridSelector(function(selectedTable)
+        PnB.SelectedTiles = selectedTable
+        local char = LP.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            PnB.OriginGrid = {
+                x = math.floor((root.Position.X / 4.475) + 0.5),
+                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+            }
+        end
+    end)
+    getgenv().SayzUI_Handles["PnB_LockPosition"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t)
+        PnB.LockPosition = t
+    end)
+    SubTab:AddButton("Refresh Position / Set Origin", function()
+        local char = LP.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            PnB.OriginGrid = {
+                x = math.floor((root.Position.X / 4.475) + 0.5),
+                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+            }
+            Window:Notify("Position Refreshed!", 2, "ok")
+        end
+    end)
+
+    -- ─────────────────────────────────────────
+    -- SEKSI 4: AUTO DROP
+    -- ─────────────────────────────────────────
+    SubTab:AddSection("AUTO DROP")
     getgenv().SayzUI_Handles["AutoDrop_PnB"] = SubTab:AddToggle("Enable Auto Drop (Setelah Collect)", getgenv().AutoDrop_PnB_Enabled, function(t)
         getgenv().AutoDrop_PnB_Enabled = t
     end)
 
-    SubTab:AddButton("Scan ID Item (Drop Manual 1x)", function()
+    SubTab:AddButton("Scan ID Item Drop (Drop Manual 1x)", function()
         DropSettings.Scanning = true
         Window:Notify("Drop 1 item manual untuk scan ID-nya!", 3, "info")
     end)
@@ -110,7 +163,6 @@ return function(SubTab, Window, myToken)
         DropSettings.DropDelay = val
     end, 1)
 
-    -- Drop Point: set posisi + manual input
     local DropPointLabel = SubTab:AddLabel("Drop Point : Belum diset")
 
     local function updateDropPointLabel()
@@ -165,62 +217,39 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- Info: Return Point otomatis dari Origin PnB
-    SubTab:AddLabel("↩ Return Point : Otomatis (Origin PnB)")
-
+    SubTab:AddLabel("↩ Return Point : Otomatis mengikuti Origin PnB")
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
-    -- ========================================
-    -- SCANNER
-    -- ========================================
-    SubTab:AddSection("SCANNER")
-    SubTab:AddButton("Scan ID Item (PnB)", function()
-        PnB.Scanning = true
-        Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
-    end)
-    local InfoLabel = SubTab:AddLabel("ID Aktif: None")
-    local StokLabel = SubTab:AddLabel("Total Stok: 0")
-
-    SubTab:AddSection("SETTING")
-    getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
-        local val = tonumber(v) or 1
-        if val < 0.1 then val = 0.1 end
-        PnB.DelayScale = val
-        PnB.ActualDelay = val * 0.12
-    end)
-
-    SubTab:AddSection("GRID TARGET (5x5)")
-    SubTab:AddGridSelector(function(selectedTable)
-        PnB.SelectedTiles = selectedTable
-        local char = LP.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            PnB.OriginGrid = {
-                x = math.floor((root.Position.X / 4.475) + 0.5),
-                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
-            }
-        end
-    end)
-
-    getgenv().SayzUI_Handles["PnB_LockPosition"] = SubTab:AddToggle("Lock Position", PnB.LockPosition, function(t)
-        PnB.LockPosition = t
-    end)
-
-    SubTab:AddButton("Refresh Position / Set Origin", function()
-        local char = LP.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            PnB.OriginGrid = {
-                x = math.floor((root.Position.X / 4.475) + 0.5),
-                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
-            }
-            Window:Notify("Position Refreshed!", 2, "ok")
-        end
-    end)
-
-    getgenv().SayzUI_Handles["PnB_BreakMode"] = SubTab:AddDropdown("Multi-Break Mode", {"Mode 1 (Fokus)", "Mode 2 (Rata)"}, PnB.BreakMode, function(v)
-        PnB.BreakMode = v
-    end)
+    -- ─────────────────────────────────────────
+    -- SEKSI 5: PANDUAN PENGGUNAAN
+    -- ─────────────────────────────────────────
+    SubTab:AddSection("PANDUAN PENGGUNAAN")
+    SubTab:AddLabel("1. BREAK & PLACE saja:")
+    SubTab:AddLabel("   Aktifkan Master, Break, dan Place.")
+    SubTab:AddLabel("   Bot akan break semua tile → lalu place ulang")
+    SubTab:AddLabel("   sampai penuh → ulangi terus menerus.")
+    SubTab:AddLabel("")
+    SubTab:AddLabel("2. Tambah SMART COLLECT:")
+    SubTab:AddLabel("   Aktifkan Smart Collect agar setelah break")
+    SubTab:AddLabel("   bot otomatis ambil semua item drop di area grid")
+    SubTab:AddLabel("   sebelum mulai place.")
+    SubTab:AddLabel("   Urutan: Break → Collect → Place")
+    SubTab:AddLabel("")
+    SubTab:AddLabel("3. Tambah AUTO DROP:")
+    SubTab:AddLabel("   Scan ID item yang ingin di-drop → set Drop Point")
+    SubTab:AddLabel("   (posisi tempat drop item) → atur Max Stack.")
+    SubTab:AddLabel("   Jika jumlah item > Max Stack, bot jalan ke Drop")
+    SubTab:AddLabel("   Point, drop sampai tersisa Keep Amount, lalu")
+    SubTab:AddLabel("   otomatis balik ke Origin PnB dan lanjut Place.")
+    SubTab:AddLabel("   Jika belum mencapai Max Stack, drop dilewati.")
+    SubTab:AddLabel("   Urutan: Break → Collect → Drop → Place")
+    SubTab:AddLabel("")
+    SubTab:AddLabel("TIPS:")
+    SubTab:AddLabel("   - Scan ID PnB: pasang 1 blok manual dulu.")
+    SubTab:AddLabel("   - Scan ID Drop: drop 1 item secara manual.")
+    SubTab:AddLabel("   - Gunakan Refresh Position sebelum mulai")
+    SubTab:AddLabel("     supaya Origin terkunci di posisi yang benar.")
+    SubTab:AddLabel("   - Lock Position agar Origin tidak bergeser")
 
     -- ========================================
     -- [3] HELPER FUNCTIONS
