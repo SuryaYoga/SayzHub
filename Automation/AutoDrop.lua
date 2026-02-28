@@ -38,6 +38,15 @@ return function(SubTab, Window, myToken)
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
     local lockedDoors = {}
 
+    -- Sama persis dengan AutoCollect
+    local SOLID_TILES = {
+        bedrock    = true,
+        dirt       = true,
+        stone      = true,
+        gravel     = true,
+        small_lock = true,
+    }
+
     -- ========================================
     -- [4] SMARTPATH
     -- Pakai dari AutoCollect (SayzShared) kalau sudah diload → lebih akurat
@@ -52,8 +61,9 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                if string.find(n, "door") or string.find(n, "frame") then return true end
-                return false
+                if SOLID_TILES[n] then return false end
+                -- grass, dirt_sapling, door, frame, dll → bisa dilewati
+                return true
             end
         end
         return true
