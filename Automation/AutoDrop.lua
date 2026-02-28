@@ -10,7 +10,6 @@ return function(SubTab, Window, myToken)
     local Managers      = ReplicatedStorage:WaitForChild("Managers")
     local PlayerDrop    = Remotes:FindFirstChild("PlayerDrop")
     local UIPromptEvent = Managers:WaitForChild("UIManager"):FindFirstChild("UIPromptEvent")
-    local WorldTiles    = require(game.ReplicatedStorage.WorldTiles)
 
     local UIManager
     pcall(function() UIManager = require(Managers:WaitForChild("UIManager")) end)
@@ -35,74 +34,72 @@ return function(SubTab, Window, myToken)
     getgenv().SayzSettings.AutoDrop = Drop
 
     -- Map limits & lockedDoors (shared dengan AutoCollect kalau sudah load)
-    local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local lockedDoors = {}
-
-    -- Sama persis dengan AutoCollect
-    local SOLID_TILES = {
-        bedrock    = true,
-        dirt       = true,
-        stone      = true,
-        gravel     = true,
-        small_lock = true,
-    }
-
     -- ========================================
-    -- [4] SMARTPATH
-    -- Pakai dari AutoCollect (SayzShared) kalau sudah diload → lebih akurat
-    -- Fallback: implementasi sendiri kalau AutoCollect belum/tidak diload
+    -- [4] WALK TO POINT
+    -- 100% pakai findSmartPath + lockedDoors dari AutoCollect (SayzShared)
+    -- Tidak ada duplikat logic di sini
     -- ========================================
-    local function isWalkable(gx, gy)
-        local sharedDoors = (getgenv().SayzShared and getgenv().SayzShared.lockedDoors) or lockedDoors
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
-        if sharedDoors[gx .. "," .. gy] then return false end
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                if SOLID_TILES[n] then return false end
-                -- grass, dirt_sapling, door, frame, dll → bisa dilewati
-                return true
+    local function WalkToPoint(targetX, targetY)
+        local shared = getgenv().SayzShared
+        if not shared or not shared.findSmartPath then
+            warn("AutoDrop: AutoCollect belum diload, WalkToPoint tidak bisa jalan.")
+            return
+        end
+
+        local HitboxFolder = workspace:FindFirstChild("Hitbox")
+        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
+        if not MyHitbox then return end
+
+        local startZ = MyHitbox.Position.Z
+
+        local maxRetry = 10
+        local retry = 0
+        while _G.LatestRunToken == myToken and Drop.Enabled do
+            local curX = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
+            local curY = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
+            if curX == targetX and curY == targetY then break end
+
+            retry = retry + 1
+            if retry > maxRetry then
+                warn("AutoDrop: Tidak bisa sampai tujuan setelah " .. maxRetry .. "x pathfind.")
+                break
             end
-        end
-        return true
-    end
 
-    local function findSmartPath(startX, startY, targetX, targetY)
-        -- Pakai dari AutoCollect kalau sudah diload
-        if getgenv().SayzShared and getgenv().SayzShared.findSmartPath then
-            return getgenv().SayzShared.findSmartPath(startX, startY, targetX, targetY)
-        end
-        -- Fallback implementasi sendiri
-        local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
-        local visited = {[startX .. "," .. startY] = 0}
-        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
-        local limitCount = 0
-        while #queue > 0 do
-            if _G.LatestRunToken ~= myToken then break end
-            limitCount = limitCount + 1
-            if limitCount > 4000 then break end
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then return current.path end
-            for _, d in ipairs(dirs) do
-                local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkable(nx, ny) then
-                    local newCost = current.cost + 1
-                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
-                        visited[nx..","..ny] = newCost
-                        local newPath = {unpack(current.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
+            -- Pakai findSmartPath milik AutoCollect langsung
+            local path = shared.findSmartPath(curX, curY, targetX, targetY)
+            if not path then
+                warn("AutoDrop: Tidak ada jalur tersisa.")
+                break
+            end
+
+            local stuck = false
+            for i, point in ipairs(path) do
+                if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
+
+                StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
+                MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
+                pcall(function()
+                    if movementModule then movementModule.Position = MyHitbox.Position end
+                end)
+                task.wait(Drop.StepDelay)
+
+                -- Deteksi stuck pintu — tulis langsung ke lockedDoors AutoCollect
+                local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if char then
+                    local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
+                    if dist > 5 then
+                        local key = math.floor(point.X/4.5+0.5) .. "," .. math.floor(point.Y/4.5+0.5)
+                        shared.lockedDoors[key] = true  -- tulis ke tabel AutoCollect langsung
+                        stuck = true
+                        break
                     end
                 end
             end
+
+            if not stuck then break end
+            -- stuck → pathfind ulang, pintu sudah diblok di lockedDoors AutoCollect
         end
-        return nil
     end
-    -- ========================================
-    SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["AutoDrop_Master"] = SubTab:AddToggle("Enable Auto Drop", Drop.Enabled, function(t)
         Drop.Enabled = t
     end)
