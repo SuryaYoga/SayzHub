@@ -10,6 +10,7 @@ return function(SubTab, Window, myToken)
     local Managers      = ReplicatedStorage:WaitForChild("Managers")
     local PlayerDrop    = Remotes:FindFirstChild("PlayerDrop")
     local UIPromptEvent = Managers:WaitForChild("UIManager"):FindFirstChild("UIPromptEvent")
+    local WorldTiles    = require(game.ReplicatedStorage.WorldTiles)
 
     local UIManager
     pcall(function() UIManager = require(Managers:WaitForChild("UIManager")) end)
@@ -33,6 +34,10 @@ return function(SubTab, Window, myToken)
     }
     getgenv().SayzSettings.AutoDrop = Drop
 
+    -- Map limits (sama dengan AutoCollect)
+    local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
+    local lockedDoors = {}
+
     -- ========================================
     -- [2] UI ELEMENTS
     -- ========================================
@@ -41,7 +46,6 @@ return function(SubTab, Window, myToken)
         Drop.Enabled = t
     end)
 
-    -- ---- TARGET ITEM ----
     SubTab:AddSection("TARGET ITEM")
     SubTab:AddButton("Scan ID Item (Drop Manual 1x)", function()
         Drop.Scanning = true
@@ -50,7 +54,6 @@ return function(SubTab, Window, myToken)
     local ScanLabel   = SubTab:AddLabel("ID Target : None")
     local AmountLabel = SubTab:AddLabel("Jumlah    : 0")
 
-    -- ---- SETTING ----
     SubTab:AddSection("SETTING")
     getgenv().SayzUI_Handles["AutoDrop_MaxStack"] = SubTab:AddInput("Max Stack (drop jika melebihi)", tostring(Drop.MaxStack), function(v)
         local val = tonumber(v)
@@ -67,14 +70,12 @@ return function(SubTab, Window, myToken)
         Drop.DropDelay = val
     end, 1)
 
-    -- ---- POSISI ----
     SubTab:AddSection("POSISI")
 
     -- Label dideklarasi DULUAN agar bisa diupdate dari callback tombol
     local DropPointLabel   = SubTab:AddLabel("Drop Point  : Belum diset")
     local ReturnPointLabel = SubTab:AddLabel("Return Point: Belum diset")
 
-    -- Helper update label
     local function updateDropLabel()
         if Drop.DropPoint then
             DropPointLabel:SetText(string.format("Drop Point  : (%d, %d)", Drop.DropPoint.x, Drop.DropPoint.y))
@@ -86,7 +87,6 @@ return function(SubTab, Window, myToken)
         end
     end
 
-    -- Helper ambil posisi grid sekarang (coba hitbox, fallback HRP)
     local function getCurrentGridPos()
         local HitboxFolder = workspace:FindFirstChild("Hitbox")
         local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
@@ -106,7 +106,7 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- DROP POINT
+    -- Drop Point
     SubTab:AddButton("📍 Set Drop Point (Posisi Sekarang)", function()
         local pos = getCurrentGridPos()
         if pos then
@@ -117,7 +117,6 @@ return function(SubTab, Window, myToken)
             Window:Notify("Gagal baca posisi! Isi manual di bawah.", 2, "danger")
         end
     end)
-    -- Fallback input manual
     SubTab:AddInput("Drop X (manual)", "0", function(v)
         local val = tonumber(v)
         if val then
@@ -135,7 +134,7 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- RETURN POINT
+    -- Return Point
     SubTab:AddButton("🔙 Set Return Point (Posisi Sekarang)", function()
         local pos = getCurrentGridPos()
         if pos then
@@ -146,7 +145,6 @@ return function(SubTab, Window, myToken)
             Window:Notify("Gagal baca posisi! Isi manual di bawah.", 2, "danger")
         end
     end)
-    -- Fallback input manual
     SubTab:AddInput("Return X (manual)", "0", function(v)
         local val = tonumber(v)
         if val then
@@ -164,14 +162,11 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- ---- STATUS ----
     SubTab:AddSection("STATUS")
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
     -- ========================================
     -- [3] SCAN HOOK
-    -- Intercept PlayerDrop:FireServer() saat Scanning = true
-    -- Ambil ID item dari slot yang di-drop
     -- ========================================
     if not _G.AutoDropHookSet then
         local oldNamecall
@@ -198,7 +193,135 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [4] CORE FUNCTIONS
+    -- [4] SMARTPATH (identik AutoCollect)
+    -- ========================================
+    local function isWalkable(gx, gy)
+        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
+            return false
+        end
+        if lockedDoors[gx .. "," .. gy] then
+            return false
+        end
+        if WorldTiles[gx] and WorldTiles[gx][gy] then
+            local l1 = WorldTiles[gx][gy][1]
+            local itemName = (type(l1) == "table") and l1[1] or l1
+            if itemName then
+                local n = string.lower(tostring(itemName))
+                -- Pintu dan frame bisa dilewati
+                if string.find(n, "door") or string.find(n, "frame") then
+                    return true
+                end
+                return false
+            end
+        end
+        return true
+    end
+
+    local function findSmartPath(startX, startY, targetX, targetY)
+        local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
+        local visited = {[startX .. "," .. startY] = 0}
+        local dirs    = {
+            {x=1,y=0},{x=-1,y=0},
+            {x=0,y=1},{x=0,y=-1}
+        }
+        local limitCount = 0
+        while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
+            limitCount = limitCount + 1
+            if limitCount > 4000 then break end
+
+            table.sort(queue, function(a, b) return a.cost < b.cost end)
+            local current = table.remove(queue, 1)
+
+            if current.x == targetX and current.y == targetY then
+                return current.path
+            end
+
+            for _, d in ipairs(dirs) do
+                local nx, ny = current.x + d.x, current.y + d.y
+                if isWalkable(nx, ny) then
+                    local newCost = current.cost + 1
+                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
+                        visited[nx..","..ny] = newCost
+                        local newPath = {unpack(current.path)}
+                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
+                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    -- ========================================
+    -- [5] WALK TO POINT (SmartPath + ModFly + cek toggle)
+    -- ========================================
+    local function WalkToPoint(targetX, targetY)
+        local HitboxFolder = workspace:FindFirstChild("Hitbox")
+        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
+        if not MyHitbox then return end
+
+        local startZ = MyHitbox.Position.Z
+        local sx = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
+        local sy = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
+
+        -- Kalau sudah sampai, tidak perlu pathfind
+        if sx == targetX and sy == targetY then return end
+
+        local path = findSmartPath(sx, sy, targetX, targetY)
+        if not path then
+            -- Fallback: jalan lurus kalau path tidak ditemukan
+            warn("AutoDrop: SmartPath gagal, skip jalan.")
+            return
+        end
+
+        for i, point in ipairs(path) do
+            -- [FIX] Cek toggle DAN token di setiap step — langsung berhenti kalau dimatikan
+            if not Drop.Enabled or _G.LatestRunToken ~= myToken then break end
+
+            StatusLabel:SetText(string.format("Status: Jalan (%d/%d)...", i, #path))
+            MyHitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
+            pcall(function()
+                if movementModule then
+                    movementModule.Position = MyHitbox.Position
+                end
+            end)
+            task.wait(Drop.StepDelay)
+
+            -- Deteksi stuck pintu (sama dengan AutoCollect)
+            local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            if char then
+                local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
+                if dist > 5 then
+                    local px = math.floor(point.X / 4.5 + 0.5)
+                    local py = math.floor(point.Y / 4.5 + 0.5)
+                    lockedDoors[px .. "," .. py] = true
+                    break
+                end
+            end
+        end
+    end
+
+    -- ModFly: bypass gravity saat Auto Drop sedang jalan
+    -- (sama persis seperti di AutoCollect)
+    task.spawn(function()
+        while _G.LatestRunToken == myToken do
+            task.wait()
+            if Drop.Enabled then
+                pcall(function()
+                    if movementModule and movementModule.VelocityY < 0 then
+                        movementModule.VelocityY = 0
+                    end
+                    if movementModule then
+                        movementModule.Grounded = true
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- ========================================
+    -- [6] CORE DROP FUNCTIONS
     -- ========================================
     local function GetItemAmount(targetID)
         local total = 0
@@ -248,7 +371,7 @@ return function(SubTab, Window, myToken)
             end
         end)
         pcall(function()
-            local targetUIs = { "topbar","gems","playerui","hotbar","crosshair","mainhud","stats","inventory","backpack","menu","bottombar","buttons" }
+            local targetUIs = {"topbar","gems","playerui","hotbar","crosshair","mainhud","stats","inventory","backpack","menu","bottombar","buttons"}
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
                 if gui:IsA("Frame") or gui:IsA("ScreenGui") or gui:IsA("ImageLabel") then
                     local gName = string.lower(gui.Name)
@@ -303,35 +426,8 @@ return function(SubTab, Window, myToken)
         ForceRestoreUI()
     end
 
-    local function WalkToPoint(targetX, targetY)
-        local HitboxFolder = workspace:FindFirstChild("Hitbox")
-        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
-        if not MyHitbox then return end
-
-        local startZ = MyHitbox.Position.Z
-        while _G.LatestRunToken == myToken do
-            local curX = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
-            local curY = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-            if curX == targetX and curY == targetY then break end
-
-            local nextX, nextY = curX, curY
-            if curX ~= targetX then
-                nextX = curX + (targetX > curX and 1 or -1)
-            elseif curY ~= targetY then
-                nextY = curY + (targetY > curY and 1 or -1)
-            end
-
-            local newPos = Vector3.new(nextX * 4.5, nextY * 4.5, startZ)
-            MyHitbox.CFrame = CFrame.new(newPos)
-            pcall(function()
-                if movementModule then movementModule.Position = newPos end
-            end)
-            task.wait(Drop.StepDelay)
-        end
-    end
-
     -- ========================================
-    -- [5] LABEL UPDATE REAL-TIME
+    -- [7] LABEL UPDATE REAL-TIME
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -346,7 +442,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [6] MAIN LOOP
+    -- [8] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -372,13 +468,16 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- [1] Jalan ke drop point
-                    StatusLabel:SetText(string.format("Status: Jalan ke Drop Point (%d,%d)...", Drop.DropPoint.x, Drop.DropPoint.y))
+                    StatusLabel:SetText(string.format("Status: Ke Drop Point (%d,%d)...", Drop.DropPoint.x, Drop.DropPoint.y))
                     WalkToPoint(Drop.DropPoint.x, Drop.DropPoint.y)
 
-                    -- [2] Drop
+                    -- [2] Cek lagi toggle setelah jalan (bisa dimatikan di tengah jalan)
+                    if not Drop.Enabled or _G.LatestRunToken ~= myToken then return end
+
+                    -- [3] Eksekusi drop
                     DoDropAll()
 
-                    -- [3] Balik ke return point
+                    -- [4] Balik ke return point
                     if Drop.Enabled and _G.LatestRunToken == myToken then
                         StatusLabel:SetText(string.format("Status: Balik ke (%d,%d)...", Drop.ReturnPoint.x, Drop.ReturnPoint.y))
                         WalkToPoint(Drop.ReturnPoint.x, Drop.ReturnPoint.y)
