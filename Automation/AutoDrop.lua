@@ -356,6 +356,7 @@ return function(SubTab, Window, myToken)
                 UIManager:ClosePrompt()
             end
         end)
+        -- Sembunyikan frame prompt yang masih keliatan
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
                 if gui:IsA("Frame") and string.find(string.lower(gui.Name), "prompt") then
@@ -364,21 +365,25 @@ return function(SubTab, Window, myToken)
             end
         end)
         task.wait(0.1)
+        -- Restore UIManager
         pcall(function()
             if UIManager then
                 if type(UIManager.ShowHUD) == "function" then UIManager:ShowHUD() end
                 if type(UIManager.ShowUI)  == "function" then UIManager:ShowUI()  end
             end
         end)
+        -- Restore SEMUA ScreenGui yang bukan prompt (termasuk SayzHub_UI)
         pcall(function()
-            local targetUIs = {"topbar","gems","playerui","hotbar","crosshair","mainhud","stats","inventory","backpack","menu","bottombar","buttons"}
-            for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
-                if gui:IsA("Frame") or gui:IsA("ScreenGui") or gui:IsA("ImageLabel") then
-                    local gName = string.lower(gui.Name)
-                    for _, tName in ipairs(targetUIs) do
-                        if string.find(gName, tName) and not string.find(gName, "prompt") then
-                            if gui:IsA("ScreenGui") then gui.Enabled = true else gui.Visible = true end
-                        end
+            for _, gui in pairs(LP.PlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") then
+                    local nameLower = string.lower(gui.Name)
+                    -- Jangan restore yang memang harusnya false (prompt, hover, dll)
+                    local isPrompt = string.find(nameLower, "prompt")
+                        or string.find(nameLower, "hover")
+                        or string.find(nameLower, "freecam")
+                        or string.find(nameLower, "bubblechat")
+                    if not isPrompt then
+                        gui.Enabled = true
                     end
                 end
             end
