@@ -5,92 +5,61 @@ return function(SubTab, Window, myToken)
     local Players           = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local LP                = Players.LocalPlayer
-    local WorldTiles        = require(game.ReplicatedStorage.WorldTiles)
-    local movementModule    = require(LP.PlayerScripts.PlayerMovement)
 
-    local Drop = {
-        Enabled      = false,
-        TargetID     = nil,
-        MaxStack     = 200,
-        KeepAmount   = 200,
-        DropDelay    = 0.5,
-        StepDelay    = 0.05,
-        DropPoint    = nil,
-        ReturnPoint  = nil,
-        Scanning     = false,
-    }
-
-    local LIMIT       = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local lockedDoors = {}
-
-    local PlayerDrop    = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayerDrop")
-    local UIPromptEvent = ReplicatedStorage:WaitForChild("Managers"):WaitForChild("UIManager"):WaitForChild("UIPromptEvent")
+    local Remotes       = ReplicatedStorage:WaitForChild("Remotes")
+    local Managers      = ReplicatedStorage:WaitForChild("Managers")
+    local PlayerDrop    = Remotes:FindFirstChild("PlayerDrop")
+    local UIPromptEvent = Managers:WaitForChild("UIManager"):FindFirstChild("UIPromptEvent")
 
     local UIManager
-    pcall(function() UIManager = require(ReplicatedStorage:WaitForChild("Managers"):WaitForChild("UIManager")) end)
+    pcall(function() UIManager = require(Managers:WaitForChild("UIManager")) end)
 
     local InventoryMod
-    pcall(function() InventoryMod = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Inventory")) end)
+    pcall(function() InventoryMod = require(ReplicatedStorage.Modules.Inventory) end)
+
+    local movementModule
+    pcall(function() movementModule = require(LP.PlayerScripts:WaitForChild("PlayerMovement")) end)
+
+    local Drop = {
+        Enabled     = false,
+        MaxStack    = 200,
+        KeepAmount  = 200,
+        DropDelay   = 0.5,
+        StepDelay   = 0.05,
+        TargetID    = nil,
+        Scanning    = false,
+        DropPoint   = nil,
+        ReturnPoint = nil,
+    }
+    getgenv().SayzSettings.AutoDrop = Drop
 
     -- ========================================
-    -- [2] UI
+    -- [2] UI ELEMENTS
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["AutoDrop_Master"] = SubTab:AddToggle("Enable Auto Drop", Drop.Enabled, function(t)
         Drop.Enabled = t
     end)
 
+    -- ---- TARGET ITEM ----
     SubTab:AddSection("TARGET ITEM")
-    SubTab:AddButton("Scan ID Item (Drop 1 item manual)", function()
+    SubTab:AddButton("Scan ID Item (Drop Manual 1x)", function()
         Drop.Scanning = true
-        Window:Notify("Drop 1 item manual untuk scan ID!", 3, "info")
+        Window:Notify("Drop 1 item manual untuk scan ID-nya!", 3, "info")
     end)
-    local ScanLabel = SubTab:AddLabel("ID Target: None")
-    local StokLabel = SubTab:AddLabel("Stok Sekarang: 0")
+    local ScanLabel   = SubTab:AddLabel("ID Target : None")
+    local AmountLabel = SubTab:AddLabel("Jumlah    : 0")
 
-    getgenv().SayzUI_Handles["AutoDrop_MaxStack"] = SubTab:AddInput("Max Stack (Drop jika lebih dari)", tostring(Drop.MaxStack), function(v)
+    -- ---- SETTING ----
+    SubTab:AddSection("SETTING")
+    getgenv().SayzUI_Handles["AutoDrop_MaxStack"] = SubTab:AddInput("Max Stack (drop jika melebihi)", tostring(Drop.MaxStack), function(v)
         local val = tonumber(v)
         if val and val > 0 then Drop.MaxStack = val end
     end)
-    getgenv().SayzUI_Handles["AutoDrop_KeepAmount"] = SubTab:AddInput("Keep Amount (Sisakan)", tostring(Drop.KeepAmount), function(v)
+    getgenv().SayzUI_Handles["AutoDrop_KeepAmt"] = SubTab:AddInput("Keep Amount (sisa setelah drop)", tostring(Drop.KeepAmount), function(v)
         local val = tonumber(v)
         if val and val >= 0 then Drop.KeepAmount = val end
     end)
-
-    SubTab:AddSection("POSISI")
-    SubTab:AddButton("Set Drop Point (Posisi Sekarang)", function()
-        local HitboxFolder = workspace:FindFirstChild("Hitbox")
-        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
-        if MyHitbox then
-            Drop.DropPoint = {
-                x = math.floor(MyHitbox.Position.X / 4.5 + 0.5),
-                y = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-            }
-            DropPointLabel:SetText(string.format("Drop Point: (%d, %d)", Drop.DropPoint.x, Drop.DropPoint.y))
-            Window:Notify(string.format("Drop Point set: (%d, %d)", Drop.DropPoint.x, Drop.DropPoint.y), 2, "ok")
-        else
-            Window:Notify("Hitbox tidak ditemukan!", 2, "danger")
-        end
-    end)
-    local DropPointLabel = SubTab:AddLabel("Drop Point: Belum diset")
-
-    SubTab:AddButton("Set Return Point (Posisi Sekarang)", function()
-        local HitboxFolder = workspace:FindFirstChild("Hitbox")
-        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
-        if MyHitbox then
-            Drop.ReturnPoint = {
-                x = math.floor(MyHitbox.Position.X / 4.5 + 0.5),
-                y = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-            }
-            ReturnPointLabel:SetText(string.format("Return Point: (%d, %d)", Drop.ReturnPoint.x, Drop.ReturnPoint.y))
-            Window:Notify(string.format("Return Point set: (%d, %d)", Drop.ReturnPoint.x, Drop.ReturnPoint.y), 2, "ok")
-        else
-            Window:Notify("Hitbox tidak ditemukan!", 2, "danger")
-        end
-    end)
-    local ReturnPointLabel = SubTab:AddLabel("Return Point: Belum diset")
-
-    SubTab:AddSection("SPEED")
     getgenv().SayzUI_Handles["AutoDrop_StepDelay"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, Drop.StepDelay, function(val)
         Drop.StepDelay = val
     end, 2)
@@ -98,26 +67,128 @@ return function(SubTab, Window, myToken)
         Drop.DropDelay = val
     end, 1)
 
+    -- ---- POSISI ----
+    SubTab:AddSection("POSISI")
+
+    -- Label dideklarasi DULUAN agar bisa diupdate dari callback tombol
+    local DropPointLabel   = SubTab:AddLabel("Drop Point  : Belum diset")
+    local ReturnPointLabel = SubTab:AddLabel("Return Point: Belum diset")
+
+    -- Helper update label
+    local function updateDropLabel()
+        if Drop.DropPoint then
+            DropPointLabel:SetText(string.format("Drop Point  : (%d, %d)", Drop.DropPoint.x, Drop.DropPoint.y))
+        end
+    end
+    local function updateReturnLabel()
+        if Drop.ReturnPoint then
+            ReturnPointLabel:SetText(string.format("Return Point: (%d, %d)", Drop.ReturnPoint.x, Drop.ReturnPoint.y))
+        end
+    end
+
+    -- Helper ambil posisi grid sekarang (coba hitbox, fallback HRP)
+    local function getCurrentGridPos()
+        local HitboxFolder = workspace:FindFirstChild("Hitbox")
+        local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
+        if MyHitbox then
+            return {
+                x = math.floor(MyHitbox.Position.X / 4.5 + 0.5),
+                y = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
+            }
+        end
+        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            return {
+                x = math.floor(root.Position.X / 4.5 + 0.5),
+                y = math.floor(root.Position.Y / 4.5 + 0.5)
+            }
+        end
+        return nil
+    end
+
+    -- DROP POINT
+    SubTab:AddButton("📍 Set Drop Point (Posisi Sekarang)", function()
+        local pos = getCurrentGridPos()
+        if pos then
+            Drop.DropPoint = pos
+            updateDropLabel()
+            Window:Notify(string.format("Drop Point: (%d, %d)", pos.x, pos.y), 2, "ok")
+        else
+            Window:Notify("Gagal baca posisi! Isi manual di bawah.", 2, "danger")
+        end
+    end)
+    -- Fallback input manual
+    SubTab:AddInput("Drop X (manual)", "0", function(v)
+        local val = tonumber(v)
+        if val then
+            Drop.DropPoint = Drop.DropPoint or {x = 0, y = 0}
+            Drop.DropPoint.x = math.floor(val)
+            updateDropLabel()
+        end
+    end)
+    SubTab:AddInput("Drop Y (manual)", "0", function(v)
+        local val = tonumber(v)
+        if val then
+            Drop.DropPoint = Drop.DropPoint or {x = 0, y = 0}
+            Drop.DropPoint.y = math.floor(val)
+            updateDropLabel()
+        end
+    end)
+
+    -- RETURN POINT
+    SubTab:AddButton("🔙 Set Return Point (Posisi Sekarang)", function()
+        local pos = getCurrentGridPos()
+        if pos then
+            Drop.ReturnPoint = pos
+            updateReturnLabel()
+            Window:Notify(string.format("Return Point: (%d, %d)", pos.x, pos.y), 2, "ok")
+        else
+            Window:Notify("Gagal baca posisi! Isi manual di bawah.", 2, "danger")
+        end
+    end)
+    -- Fallback input manual
+    SubTab:AddInput("Return X (manual)", "0", function(v)
+        local val = tonumber(v)
+        if val then
+            Drop.ReturnPoint = Drop.ReturnPoint or {x = 0, y = 0}
+            Drop.ReturnPoint.x = math.floor(val)
+            updateReturnLabel()
+        end
+    end)
+    SubTab:AddInput("Return Y (manual)", "0", function(v)
+        local val = tonumber(v)
+        if val then
+            Drop.ReturnPoint = Drop.ReturnPoint or {x = 0, y = 0}
+            Drop.ReturnPoint.y = math.floor(val)
+            updateReturnLabel()
+        end
+    end)
+
+    -- ---- STATUS ----
     SubTab:AddSection("STATUS")
     local StatusLabel = SubTab:AddLabel("Status: Idle")
 
     -- ========================================
     -- [3] SCAN HOOK
-    -- Tangkap saat PlayerDrop di-fire manual → ambil ID dari slot
+    -- Intercept PlayerDrop:FireServer() saat Scanning = true
+    -- Ambil ID item dari slot yang di-drop
     -- ========================================
     if not _G.AutoDropHookSet then
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
-            local args = {...}
-            if Drop.Scanning and method == "FireServer" and self == PlayerDrop then
-                local slot = args[1]
-                if slot and InventoryMod and InventoryMod.Stacks then
-                    local data = InventoryMod.Stacks[slot]
-                    if data and data.Id then
-                        Drop.TargetID = data.Id
-                        Drop.Scanning = false
-                        Window:Notify("ID Scanned: " .. tostring(data.Id), 2, "ok")
+            if _G.LatestRunToken == myToken and Drop.Scanning and method == "FireServer" then
+                if self == PlayerDrop then
+                    local args = {...}
+                    local slotIndex = args[1]
+                    if slotIndex and InventoryMod and InventoryMod.Stacks then
+                        local data = InventoryMod.Stacks[slotIndex]
+                        if data and data.Id then
+                            Drop.TargetID = tostring(data.Id)
+                            Drop.Scanning = false
+                            ScanLabel:SetText("ID Target : " .. Drop.TargetID)
+                            Window:Notify("ID Scanned: " .. Drop.TargetID, 2, "ok")
+                        end
                     end
                 end
             end
@@ -127,20 +198,8 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [4] INVENTORY HELPERS
+    -- [4] CORE FUNCTIONS
     -- ========================================
-    local function GetSlotByItemID(targetID)
-        if not InventoryMod or not InventoryMod.Stacks then return nil end
-        for slotIndex, data in pairs(InventoryMod.Stacks) do
-            if type(data) == "table" and data.Id then
-                if tostring(data.Id) == tostring(targetID) then
-                    if not data.Amount or data.Amount > 0 then return slotIndex end
-                end
-            end
-        end
-        return nil
-    end
-
     local function GetItemAmount(targetID)
         local total = 0
         if not InventoryMod or not InventoryMod.Stacks then return total end
@@ -154,12 +213,25 @@ return function(SubTab, Window, myToken)
         return total
     end
 
-    -- ========================================
-    -- [5] RESTORE UI
-    -- ========================================
+    local function GetSlotByItemID(targetID)
+        if not InventoryMod or not InventoryMod.Stacks then return nil end
+        for slotIndex, data in pairs(InventoryMod.Stacks) do
+            if type(data) == "table" and data.Id then
+                if tostring(data.Id) == tostring(targetID) then
+                    if not data.Amount or data.Amount > 0 then
+                        return slotIndex
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     local function ForceRestoreUI()
         pcall(function()
-            if UIManager and type(UIManager.ClosePrompt) == "function" then UIManager:ClosePrompt() end
+            if UIManager and type(UIManager.ClosePrompt) == "function" then
+                UIManager:ClosePrompt()
+            end
         end)
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
@@ -176,7 +248,7 @@ return function(SubTab, Window, myToken)
             end
         end)
         pcall(function()
-            local targetUIs = {"topbar","gems","playerui","hotbar","crosshair","mainhud","stats","inventory","backpack","menu","bottombar","buttons"}
+            local targetUIs = { "topbar","gems","playerui","hotbar","crosshair","mainhud","stats","inventory","backpack","menu","bottombar","buttons" }
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
                 if gui:IsA("Frame") or gui:IsA("ScreenGui") or gui:IsA("ImageLabel") then
                     local gName = string.lower(gui.Name)
@@ -190,181 +262,132 @@ return function(SubTab, Window, myToken)
         end)
     end
 
-    -- ========================================
-    -- [6] DROP LOGIC
-    -- ========================================
     local function ExecuteDropBatch(slotIndex, dropAmount)
+        if not PlayerDrop or not UIPromptEvent then return false end
         pcall(function() PlayerDrop:FireServer(slotIndex) end)
         task.wait(0.2)
         pcall(function()
-            UIPromptEvent:FireServer({ ButtonAction = "drp", Inputs = { amt = tostring(dropAmount) } })
+            UIPromptEvent:FireServer({
+                ButtonAction = "drp",
+                Inputs = { amt = tostring(dropAmount) }
+            })
         end)
         task.wait(0.1)
         pcall(function()
             for _, gui in pairs(LP.PlayerGui:GetDescendants()) do
-                if gui:IsA("Frame") and string.find(string.lower(gui.Name), "prompt") then gui.Visible = false end
+                if gui:IsA("Frame") and string.find(string.lower(gui.Name), "prompt") then
+                    gui.Visible = false
+                end
             end
         end)
+        return true
     end
 
-    local function DropUntilClean()
-        while _G.LatestRunToken == myToken do
+    local function DoDropAll()
+        while _G.LatestRunToken == myToken and Drop.Enabled do
             local current = GetItemAmount(Drop.TargetID)
             local toDrop  = current - Drop.KeepAmount
             if toDrop <= 0 then break end
+
             local slot = GetSlotByItemID(Drop.TargetID)
             if not slot then break end
+
             local batchAmount = math.min(toDrop, 200)
-            StatusLabel:SetText(string.format("Status: Dropping %d...", batchAmount))
-            ExecuteDropBatch(slot, batchAmount)
+            StatusLabel:SetText(string.format("Status: Drop %d...", batchAmount))
+
+            local ok = ExecuteDropBatch(slot, batchAmount)
+            if not ok then break end
+
             task.wait(Drop.DropDelay)
         end
         ForceRestoreUI()
     end
 
-    -- ========================================
-    -- [7] SMART PATH (A* identik AutoCollect)
-    -- ========================================
-    local function isWalkable(gx, gy)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
-        if lockedDoors[gx..","..gy] then return false end
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                if string.find(n, "door") or string.find(n, "frame") then return true end
-                return false
-            end
-        end
-        return true
-    end
-
-    local function findSmartPath(startX, startY, targetX, targetY)
-        local queue   = {{x=startX, y=startY, path={}, cost=0}}
-        local visited = {[startX..","..startY] = 0}
-        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
-        local limit   = 0
-        while #queue > 0 do
-            if _G.LatestRunToken ~= myToken then break end
-            limit = limit + 1
-            if limit > 4000 then break end
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local cur = table.remove(queue, 1)
-            if cur.x == targetX and cur.y == targetY then return cur.path end
-            for _, d in ipairs(dirs) do
-                local nx, ny = cur.x + d.x, cur.y + d.y
-                if isWalkable(nx, ny) then
-                    local newCost = cur.cost + 1
-                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
-                        visited[nx..","..ny] = newCost
-                        local newPath = {unpack(cur.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
-                    end
-                end
-            end
-        end
-        return nil
-    end
-
-    local function WalkToGrid(targetX, targetY)
+    local function WalkToPoint(targetX, targetY)
         local HitboxFolder = workspace:FindFirstChild("Hitbox")
         local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
-        if not MyHitbox then StatusLabel:SetText("Status: Hitbox tidak ditemukan!") return false end
+        if not MyHitbox then return end
 
-        local sx = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
-        local sy = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
-        if sx == targetX and sy == targetY then return true end
+        local startZ = MyHitbox.Position.Z
+        while _G.LatestRunToken == myToken do
+            local curX = math.floor(MyHitbox.Position.X / 4.5 + 0.5)
+            local curY = math.floor(MyHitbox.Position.Y / 4.5 + 0.5)
+            if curX == targetX and curY == targetY then break end
 
-        local path = findSmartPath(sx, sy, targetX, targetY)
-        if not path then StatusLabel:SetText("Status: Path tidak ditemukan!") return false end
-
-        for i, point in ipairs(path) do
-            if _G.LatestRunToken ~= myToken or not Drop.Enabled then break end
-            StatusLabel:SetText(string.format("Status: Jalan (%d/%d)", i, #path))
-            MyHitbox.CFrame = CFrame.new(point.X, point.Y, MyHitbox.Position.Z)
-            movementModule.Position = MyHitbox.Position
-            task.wait(Drop.StepDelay)
-
-            local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-            if char then
-                local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                if dist > 5 then
-                    lockedDoors[math.floor(point.X/4.5+0.5)..","..math.floor(point.Y/4.5+0.5)] = true
-                    break
-                end
+            local nextX, nextY = curX, curY
+            if curX ~= targetX then
+                nextX = curX + (targetX > curX and 1 or -1)
+            elseif curY ~= targetY then
+                nextY = curY + (targetY > curY and 1 or -1)
             end
+
+            local newPos = Vector3.new(nextX * 4.5, nextY * 4.5, startZ)
+            MyHitbox.CFrame = CFrame.new(newPos)
+            pcall(function()
+                if movementModule then movementModule.Position = newPos end
+            end)
+            task.wait(Drop.StepDelay)
         end
-        return true
     end
 
     -- ========================================
-    -- [8] GRAVITY BYPASS
-    -- ========================================
-    task.spawn(function()
-        while _G.LatestRunToken == myToken do
-            task.wait()
-            if Drop.Enabled then
-                pcall(function()
-                    if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
-                    movementModule.Grounded = true
-                end)
-            end
-        end
-    end)
-
-    -- ========================================
-    -- [9] MAIN LOOP
+    -- [5] LABEL UPDATE REAL-TIME
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             pcall(function()
                 if Drop.TargetID then
-                    ScanLabel:SetText("ID Target: " .. tostring(Drop.TargetID))
-                    StokLabel:SetText("Stok Sekarang: " .. GetItemAmount(Drop.TargetID))
+                    ScanLabel:SetText("ID Target : " .. tostring(Drop.TargetID))
+                    AmountLabel:SetText("Jumlah    : " .. GetItemAmount(Drop.TargetID))
                 end
             end)
+            task.wait(1)
+        end
+    end)
 
+    -- ========================================
+    -- [6] MAIN LOOP
+    -- ========================================
+    task.spawn(function()
+        while _G.LatestRunToken == myToken do
             if Drop.Enabled then
                 pcall(function()
                     if not Drop.TargetID then
-                        StatusLabel:SetText("Status: Belum scan ID item!")
+                        StatusLabel:SetText("Status: Scan ID dulu!")
                         return
                     end
                     if not Drop.DropPoint then
-                        StatusLabel:SetText("Status: Belum set Drop Point!")
+                        StatusLabel:SetText("Status: Set Drop Point dulu!")
                         return
                     end
                     if not Drop.ReturnPoint then
-                        StatusLabel:SetText("Status: Belum set Return Point!")
+                        StatusLabel:SetText("Status: Set Return Point dulu!")
                         return
                     end
 
                     local current = GetItemAmount(Drop.TargetID)
                     if current <= Drop.MaxStack then
-                        StatusLabel:SetText(string.format("Status: Monitoring... (%d/%d)", current, Drop.MaxStack))
+                        StatusLabel:SetText(string.format("Status: Monitoring (%d/%d)", current, Drop.MaxStack))
                         return
                     end
 
                     -- [1] Jalan ke drop point
-                    StatusLabel:SetText("Status: Jalan ke Drop Point...")
-                    WalkToGrid(Drop.DropPoint.x, Drop.DropPoint.y)
+                    StatusLabel:SetText(string.format("Status: Jalan ke Drop Point (%d,%d)...", Drop.DropPoint.x, Drop.DropPoint.y))
+                    WalkToPoint(Drop.DropPoint.x, Drop.DropPoint.y)
 
-                    -- [2] Drop sampai bersih
-                    if Drop.Enabled then DropUntilClean() end
+                    -- [2] Drop
+                    DoDropAll()
 
                     -- [3] Balik ke return point
                     if Drop.Enabled and _G.LatestRunToken == myToken then
-                        StatusLabel:SetText("Status: Balik ke Return Point...")
-                        WalkToGrid(Drop.ReturnPoint.x, Drop.ReturnPoint.y)
-                        StatusLabel:SetText("Status: Selesai, monitoring...")
+                        StatusLabel:SetText(string.format("Status: Balik ke (%d,%d)...", Drop.ReturnPoint.x, Drop.ReturnPoint.y))
+                        WalkToPoint(Drop.ReturnPoint.x, Drop.ReturnPoint.y)
+                        StatusLabel:SetText("Status: Monitoring...")
                     end
                 end)
             else
                 StatusLabel:SetText("Status: Nonaktif")
             end
-
             task.wait(1)
         end
     end)
