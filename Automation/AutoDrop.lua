@@ -34,12 +34,63 @@ return function(SubTab, Window, myToken)
     }
     getgenv().SayzSettings.AutoDrop = Drop
 
-    -- Map limits (sama dengan AutoCollect)
+    -- Map limits & lockedDoors (shared dengan AutoCollect kalau sudah load)
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
     local lockedDoors = {}
 
     -- ========================================
-    -- [2] UI ELEMENTS
+    -- [4] SMARTPATH
+    -- Pakai dari AutoCollect (SayzShared) kalau sudah diload → lebih akurat
+    -- Fallback: implementasi sendiri kalau AutoCollect belum/tidak diload
+    -- ========================================
+    local function isWalkable(gx, gy)
+        local sharedDoors = (getgenv().SayzShared and getgenv().SayzShared.lockedDoors) or lockedDoors
+        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then return false end
+        if sharedDoors[gx .. "," .. gy] then return false end
+        if WorldTiles[gx] and WorldTiles[gx][gy] then
+            local l1 = WorldTiles[gx][gy][1]
+            local itemName = (type(l1) == "table") and l1[1] or l1
+            if itemName then
+                local n = string.lower(tostring(itemName))
+                if string.find(n, "door") or string.find(n, "frame") then return true end
+                return false
+            end
+        end
+        return true
+    end
+
+    local function findSmartPath(startX, startY, targetX, targetY)
+        -- Pakai dari AutoCollect kalau sudah diload
+        if getgenv().SayzShared and getgenv().SayzShared.findSmartPath then
+            return getgenv().SayzShared.findSmartPath(startX, startY, targetX, targetY)
+        end
+        -- Fallback implementasi sendiri
+        local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
+        local visited = {[startX .. "," .. startY] = 0}
+        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local limitCount = 0
+        while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
+            limitCount = limitCount + 1
+            if limitCount > 4000 then break end
+            table.sort(queue, function(a, b) return a.cost < b.cost end)
+            local current = table.remove(queue, 1)
+            if current.x == targetX and current.y == targetY then return current.path end
+            for _, d in ipairs(dirs) do
+                local nx, ny = current.x + d.x, current.y + d.y
+                if isWalkable(nx, ny) then
+                    local newCost = current.cost + 1
+                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
+                        visited[nx..","..ny] = newCost
+                        local newPath = {unpack(current.path)}
+                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
+                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
+                    end
+                end
+            end
+        end
+        return nil
+    end
     -- ========================================
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["AutoDrop_Master"] = SubTab:AddToggle("Enable Auto Drop", Drop.Enabled, function(t)
@@ -190,67 +241,6 @@ return function(SubTab, Window, myToken)
             return oldNamecall(self, ...)
         end)
         _G.AutoDropHookSet = true
-    end
-
-    -- ========================================
-    -- [4] SMARTPATH (identik AutoCollect)
-    -- ========================================
-    local function isWalkable(gx, gy)
-        if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
-            return false
-        end
-        if lockedDoors[gx .. "," .. gy] then
-            return false
-        end
-        if WorldTiles[gx] and WorldTiles[gx][gy] then
-            local l1 = WorldTiles[gx][gy][1]
-            local itemName = (type(l1) == "table") and l1[1] or l1
-            if itemName then
-                local n = string.lower(tostring(itemName))
-                -- Pintu dan frame bisa dilewati
-                if string.find(n, "door") or string.find(n, "frame") then
-                    return true
-                end
-                return false
-            end
-        end
-        return true
-    end
-
-    local function findSmartPath(startX, startY, targetX, targetY)
-        local queue   = {{x = startX, y = startY, path = {}, cost = 0}}
-        local visited = {[startX .. "," .. startY] = 0}
-        local dirs    = {
-            {x=1,y=0},{x=-1,y=0},
-            {x=0,y=1},{x=0,y=-1}
-        }
-        local limitCount = 0
-        while #queue > 0 do
-            if _G.LatestRunToken ~= myToken then break end
-            limitCount = limitCount + 1
-            if limitCount > 4000 then break end
-
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
-
-            if current.x == targetX and current.y == targetY then
-                return current.path
-            end
-
-            for _, d in ipairs(dirs) do
-                local nx, ny = current.x + d.x, current.y + d.y
-                if isWalkable(nx, ny) then
-                    local newCost = current.cost + 1
-                    if not visited[nx..","..ny] or newCost < visited[nx..","..ny] then
-                        visited[nx..","..ny] = newCost
-                        local newPath = {unpack(current.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, path=newPath, cost=newCost})
-                    end
-                end
-            end
-        end
-        return nil
     end
 
     -- ========================================
@@ -432,7 +422,20 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [7] LABEL UPDATE REAL-TIME
+    -- [7] EXPORT SHARED FUNCTIONS
+    -- Dibagikan ke AutoPnB (dan modul lain) lewat getgenv()
+    -- ========================================
+    getgenv().SayzShared = getgenv().SayzShared or {}
+    getgenv().SayzShared.AutoDrop = {
+        Drop          = Drop,
+        GetItemAmount = GetItemAmount,
+        GetSlotByItemID = GetSlotByItemID,
+        DoDropAll     = DoDropAll,
+        WalkToPoint   = WalkToPoint,
+    }
+
+    -- ========================================
+    -- [8] LABEL UPDATE REAL-TIME
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -447,7 +450,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [8] MAIN LOOP
+    -- [9] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
