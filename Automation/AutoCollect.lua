@@ -56,6 +56,16 @@ return function(SubTab, Window, myToken)
         return false
     end
 
+    -- Tile solid yang TIDAK bisa dilewati
+    -- Tile lain (grass, dirt_sapling, door, frame, dll) dianggap bisa dilewati
+    local SOLID_TILES = {
+        bedrock    = true,
+        dirt       = true,
+        stone      = true,
+        gravel     = true,
+        small_lock = true,
+    }
+
     local function isWalkable(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
             return false, false 
@@ -72,10 +82,11 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                if string.find(n, "door") or string.find(n, "frame") then 
-                    return true, hasBlacklist
+                if SOLID_TILES[n] then
+                    return false, false
                 end
-                return false, false 
+                -- grass, dirt_sapling, door, frame, dll → bisa dilewati
+                return true, hasBlacklist
             end
         end
         return true, hasBlacklist
