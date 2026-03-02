@@ -112,7 +112,7 @@ end
 -- Eksekusi Loading Modul
 SafeLoad("Modules/Beranda.lua", "Beranda")
 SafeLoad("Modules/Automation.lua", "Automation")
--- [FIX-7] Miscs.lua dikomentari karena file belum ada di repo
--- SafeLoad("Modules/Miscs.lua", "Miscs")
+SafeLoad("Modules/Menu.lua", "Menu")
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
+
