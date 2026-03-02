@@ -164,12 +164,10 @@ return function(SubTab, Window, myToken)
 
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-
         if sx == gx and sy == gy then return end
 
         local path = findSmartPath(sx, sy, gx, gy)
         if not path then
-            -- Fallback teleport
             Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             pcall(function() MovPacket:FireServer(gx * 4.5, gy * 4.5) end)
@@ -177,17 +175,25 @@ return function(SubTab, Window, myToken)
             return
         end
 
+        -- Jalan step by step seperti autocollect
         for i, point in ipairs(path) do
             if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
-
-            -- Set posisi
             Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             pcall(function() MovPacket:FireServer(point.X, point.Y) end)
             task.wait(getgenv().AutoClear_StepDelay)
+        end
+
+        -- Cek posisi hanya sekali setelah sampai tujuan
+        -- Kalau belum bener, sync ulang dan tunggu sebentar
+        if not isAtPosition(gx, gy) then
+            Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
+            movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(gx * 4.5, gy * 4.5) end)
+            task.wait(0.15)
         end
     end
 
