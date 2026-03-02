@@ -8,7 +8,8 @@ return function(SubTab, Window, myToken)
     local worldData         = require(ReplicatedStorage.WorldTiles)
     local movementModule    = require(LP.PlayerScripts.PlayerMovement)
 
-    local PlayerFist = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayerFist")
+    local PlayerFist   = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayerFist")
+    local MovPacket    = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayerMovementPackets"):WaitForChild(LP.Name)
 
     getgenv().AutoClear_Enabled    = getgenv().AutoClear_Enabled    or false
     getgenv().AutoClear_BreakDelay = getgenv().AutoClear_BreakDelay or 0.035
@@ -37,10 +38,12 @@ return function(SubTab, Window, myToken)
     local function isLockArea(gx, gy)
         local tile = worldData[gx] and worldData[gx][gy]
         if not tile then return false end
+        -- Cek semua layer dan semua key di tile
         for _, layerData in pairs(tile) do
             if type(layerData) == "table" then
                 for k, v in pairs(layerData) do
                     if tostring(v) == "lock_area" then return true end
+                    if tostring(k) == "lock_area" then return true end
                 end
             elseif type(layerData) == "string" then
                 if string.lower(layerData) == "lock_area" then return true end
@@ -86,6 +89,8 @@ return function(SubTab, Window, myToken)
         if gx < WORLD_MIN_X or gx > WORLD_MAX_X or gy < WORLD_MIN_Y or gy > WORLD_MAX_Y then
             return false
         end
+        -- Lock area = hard block (bot tidak perlu masuk ke sana)
+        if isLockArea(gx, gy) then return false end
         -- Tile ada isi apapun di layer 1 = hard block
         if worldData[gx] and worldData[gx][gy] and worldData[gx][gy][1] ~= nil then
             return false
@@ -167,6 +172,7 @@ return function(SubTab, Window, myToken)
             -- Fallback teleport
             Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(gx * 4.5, gy * 4.5) end)
             task.wait(0.2)
             return
         end
@@ -183,11 +189,13 @@ return function(SubTab, Window, myToken)
             -- Set posisi
             Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(point.X, point.Y) end)
             task.wait(getgenv().AutoClear_StepDelay)
 
             -- Tunggu karakter beneran sampai di step ini (max 0.5 detik)
             local waitCount = 0
             while not isAtPosition(px, py) and waitCount < 10 do
+                pcall(function() MovPacket:FireServer(point.X, point.Y) end)
                 task.wait(0.05)
                 waitCount = waitCount + 1
             end
@@ -218,17 +226,23 @@ return function(SubTab, Window, myToken)
 
             -- Cek posisi karakter dulu sebelum mukul
             if isAtPosition(gx, gy + 1) then
+                pcall(function() MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5) end)
                 PlayerFist:FireServer(pos)
                 hits = hits + 1
                 stuckWait = 0
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
-                -- Karakter belum di posisi / dibalikin server — tunggu dulu
+                -- Karakter belum di posisi / dibalikin server — sync ulang dan tunggu
+                pcall(function()
+                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+                    if Hitbox then
+                        Hitbox.CFrame = CFrame.new(gx * 4.5, (gy + 1) * 4.5, Hitbox.Position.Z)
+                        movementModule.Position = Hitbox.Position
+                        MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5)
+                    end
+                end)
                 stuckWait = stuckWait + 1
-                if stuckWait > 20 then
-                    -- Sudah terlalu lama tidak bisa posisi, skip tile ini
-                    break
-                end
+                if stuckWait > 20 then break end
                 task.wait(0.1)
             end
         end
