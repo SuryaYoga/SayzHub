@@ -181,9 +181,33 @@ return function(SubTab, Window, myToken)
         local sy = math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
         if sx == gx and sy == gy then return end
 
-        local path = findSmartPath(sx, sy, gx, gy)
+        -- Kalau target tidak walkable, cari tile kosong terdekat di sekitarnya
+        local tgx, tgy = gx, gy
+        if not isWalkable(gx, gy) then
+            local found = false
+            for radius = 1, 3 do
+                for dy = -radius, radius do
+                    for dx = -radius, radius do
+                        if isWalkable(gx + dx, gy + dy) then
+                            tgx, tgy = gx + dx, gy + dy
+                            found = true
+                            break
+                        end
+                    end
+                    if found then break end
+                end
+                if found then break end
+            end
+            if not found then
+                moveTo(gx, gy)
+                task.wait(0.2)
+                return
+            end
+        end
+
+        local path = findSmartPath(sx, sy, tgx, tgy)
         if not path then
-            moveTo(gx, gy)
+            moveTo(tgx, tgy)
             task.wait(0.2)
             return
         end
@@ -199,8 +223,8 @@ return function(SubTab, Window, myToken)
             task.wait(getgenv().AutoClear_StepDelay)
         end
 
-        if not isAtPosition(gx, gy) then
-            moveTo(gx, gy)
+        if not isAtPosition(tgx, tgy) then
+            moveTo(tgx, tgy)
             task.wait(0.15)
         end
     end
