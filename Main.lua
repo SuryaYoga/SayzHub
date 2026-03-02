@@ -2,18 +2,24 @@
 _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 local myToken = _G.LatestRunToken
 
--- Anti-AFK Function (Sesuai Token agar tidak Spam)
+-- Anti-AFK: simulasi input tiap 4 menit, tidak bergantung event Idled
 local function InitAntiAFK()
     local VirtualUser = game:GetService("VirtualUser")
-    if _G.AFKConnection then _G.AFKConnection:Disconnect() end
-    
-    _G.AFKConnection = game:GetService("Players").LocalPlayer.Idled:Connect(function()
-        if _G.LatestRunToken == myToken then
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
-            print("SayzHub: Anti-AFK Action Performed.")
-        else
-            if _G.AFKConnection then _G.AFKConnection:Disconnect() end
+
+    -- Stop loop lama kalau ada
+    if _G.AFKThread then
+        task.cancel(_G.AFKThread)
+        _G.AFKThread = nil
+    end
+
+    _G.AFKThread = task.spawn(function()
+        while _G.LatestRunToken == myToken do
+            task.wait(600) -- tiap 10 menit
+            if _G.LatestRunToken ~= myToken then break end
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
         end
     end)
 end
@@ -22,6 +28,7 @@ InitAntiAFK()
 -- [FIX-2] Reset OldHookSet setiap re-execute agar hook scanner terpasang ulang
 _G.OldHookSet = false
 _G.AutoDropHookSet = false
+_G.AntiDamageHookSet = false
 
 -- [[ 3. CONFIGURATION ]] --
 getgenv().SayzConfig = {
@@ -82,6 +89,7 @@ local Window = SayzUI:CreateWindow({
         -- [FIX-2] Reset flag hook saat ditutup agar re-execute bersih
         _G.OldHookSet = false
         _G.AutoDropHookSet = false
+        _G.AntiDamageHookSet = false
         getgenv().SayzSettings = nil
         getgenv().SayzUI_Handles = nil
         print("SayzHub: Stopped and Cleaned.")
@@ -113,6 +121,7 @@ end
 SafeLoad("Modules/Beranda.lua", "Beranda")
 SafeLoad("Modules/Automation.lua", "Automation")
 SafeLoad("Modules/Menu.lua", "Menu")
+-- [FIX-7] Miscs.lua dikomentari karena file belum ada di repo
+-- SafeLoad("Modules/Miscs.lua", "Miscs")
 
 Window:Notify("SayzUI Berhasil Dimuat!", 3, "ok")
-
