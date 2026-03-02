@@ -1,27 +1,23 @@
 return function(SubTab, Window)
-    -- ========================================
-    -- [0] MEMORY CLEANER (Satu-satunya tempat setting awal)
-    -- ========================================
-    getgenv().AutoCollect = false
-    getgenv().TakeGems = true
-    getgenv().StepDelay = 0.05
-    getgenv().ItemBlacklist = {}
-    getgenv().AvoidanceStrength = 50
-
-    -- Reset variabel internal lokal
-    local lockedDoors = {}
-    local badItems = {}
-    local currentPool = {}
-    local doorDatabase = {}
-
     -- [[ 1. SETUP & VARIABLES ]] --
-    local myToken = _G.LatestRunToken -- Token untuk Kill Switch
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
+    -- Pengaturan Global
+    getgenv().AutoCollect = getgenv().AutoCollect or false
+    getgenv().TakeGems = getgenv().TakeGems or true 
+    getgenv().StepDelay = getgenv().StepDelay or 0.05 
+    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
+    -- Ini fitur Radius yang kamu minta (Default 50)
+    getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
+
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
+    local doorDatabase = {} 
+    local lockedDoors = {} 
+    local badItems = {} 
+    local currentPool = {} 
 
     -- [[ 2. CORE FUNCTIONS ]] --
 
@@ -62,10 +58,12 @@ return function(SubTab, Window)
     end
 
     local function isWalkable(gx, gy)
+        -- Cek Batas Map
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
             return false, false 
         end
         
+        -- Cek Pintu yang pernah bikin stuck
         if lockedDoors[gx .. "," .. gy] then 
             return false, false 
         end 
@@ -77,6 +75,7 @@ return function(SubTab, Window)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
+                -- Pintu dan Frame dianggap bisa dilewati
                 if string.find(n, "door") or string.find(n, "frame") then 
                     return true, hasBlacklist
                 end
@@ -96,7 +95,6 @@ return function(SubTab, Window)
         
         local limitCount = 0
         while #queue > 0 do
-            if _G.LatestRunToken ~= myToken then break end
             limitCount = limitCount + 1
             if limitCount > 4000 then break end 
 
@@ -112,6 +110,8 @@ return function(SubTab, Window)
                 local walkable, isBlacklisted = isWalkable(nx, ny)
 
                 if walkable then
+                    -- LOGIKA RADIUS/BEBAN:
+                    -- Semakin tinggi AvoidanceStrength, semakin bot anti lewat item blacklist
                     local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
 
@@ -176,6 +176,7 @@ return function(SubTab, Window)
         getgenv().StepDelay = val
     end)
 
+    -- Input Radius/Beban sesuai permintaanmu
     SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
         local val = tonumber(v)
         if val then
@@ -185,6 +186,8 @@ return function(SubTab, Window)
     end)
 
     SubTab:AddSection("Filter Management")
+    
+    -- Label Daftar Blacklist Aktif
     local FilterLabel = SubTab:AddLabel("Active Blacklist: None")
 
     local MultiDrop
@@ -211,24 +214,16 @@ return function(SubTab, Window)
         Window:Notify("Found " .. #found .. " item types.", 2)
     end)
 
-    -- Tombol Reset Utama
     SubTab:AddButton("Reset All Filters", function()
         getgenv().ItemBlacklist = {}
         badItems = {}
+        lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
-        
-        -- Memanggil fungsi :Set([]) yang baru kita buat di library
+        -- Fix: Benar-benar mereset pilihan di UI Dropdown
         if MultiDrop and MultiDrop.Set then 
             MultiDrop:Set({}) 
         end
-        
-        Window:Notify("Filters & UI Reset!", 2)
-    end)
-    
-    -- Tombol Reset Door Terpisah
-    SubTab:AddButton("Reset Stuck Doors", function()
-        lockedDoors = {} -- Membersihkan list pintu yang bikin stuck
-        Window:Notify("Stuck Doors Cleared!", 2)
+        Window:Notify("All settings cleared!", 2)
     end)
 
     SubTab:AddSection("Status Dashboard")
@@ -237,8 +232,7 @@ return function(SubTab, Window)
 
     -- [[ 4. GRAVITY BYPASS ]] --
     task.spawn(function()
-        while _G.LatestRunToken == myToken do
-            task.wait()
+        while task.wait() do
             if getgenv().AutoCollect then
                 pcall(function()
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
@@ -251,7 +245,7 @@ return function(SubTab, Window)
     -- [[ 5. MAIN LOOP ]] --
     InitDoorDatabase()
     task.spawn(function()
-        while _G.LatestRunToken == myToken do
+        while true do
             pcall(function()
                 if getgenv().AutoCollect then
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
@@ -267,8 +261,7 @@ return function(SubTab, Window)
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for i, point in ipairs(path) do
-                                -- CEK TOKEN & TOGGLE DI DALAM PATH
-                                if _G.LatestRunToken ~= myToken or not getgenv().AutoCollect then break end
+                                if not getgenv().AutoCollect then break end
                                 
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
@@ -299,6 +292,5 @@ return function(SubTab, Window)
             end)
             task.wait(0.2)
         end
-        print("Auto Collect: Loop Terminated.")
     end)
 end
