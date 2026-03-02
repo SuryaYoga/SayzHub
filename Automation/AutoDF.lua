@@ -311,17 +311,8 @@ return function(SubTab, Window, myToken)
             task.wait()
             if getgenv().DirtFarm_Enabled then
                 pcall(function()
-                    local Hitbox = getHitbox()
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
                     movementModule.Grounded = true
-                    if Hitbox then
-                        local gx, gy = getGridPos()
-                        local wx, wy = worldPos(gx, gy)
-                        if math.abs(Hitbox.Position.Y - wy) > 0.1 then
-                            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-                            movementModule.Position = Hitbox.Position
-                        end
-                    end
                 end)
             end
         end
