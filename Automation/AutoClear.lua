@@ -170,6 +170,16 @@ return function(SubTab, Window, myToken)
     end
 
     local function walkToGrid(gx, gy, StatusLabel)
+    local function moveTo(gx, gy)
+        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+        if not Hitbox then return end
+        local wx, wy = gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
+        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+        movementModule.Position = Hitbox.Position
+        pcall(function() MovPacket:FireServer(wx, wy) end)
+    end
+
+    local function walkToGrid(gx, gy, StatusLabel)
         local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
         if not Hitbox then return end
 
@@ -179,10 +189,7 @@ return function(SubTab, Window, myToken)
 
         local path = findSmartPath(sx, sy, gx, gy)
         if not path then
-            local wx, wy = gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            moveTo(gx, gy)
             task.wait(0.2)
             return
         end
@@ -192,20 +199,14 @@ return function(SubTab, Window, myToken)
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
-            local wx = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
-            local wy = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            local px = math.floor(point.X / GRID_SIZE + 0.5)
+            local py = math.floor(point.Y / GRID_SIZE + 0.5)
+            moveTo(px, py)
             task.wait(getgenv().AutoClear_StepDelay)
         end
 
-        -- Cek posisi sekali setelah sampai tujuan
         if not isAtPosition(gx, gy) then
-            local wx, wy = gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            moveTo(gx, gy)
             task.wait(0.15)
         end
     end
@@ -238,17 +239,7 @@ return function(SubTab, Window, myToken)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
-                -- Dibalikin server, sync ulang
-                pcall(function()
-                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-                    if Hitbox then
-                        local wx = gx * GRID_SIZE
-                        local wy = (gy + 1) * GRID_SIZE + OFFSET_Y
-                        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-                        movementModule.Position = Hitbox.Position
-                        MovPacket:FireServer(wx, wy)
-                    end
-                end)
+                moveTo(gx, gy + 1)
                 task.wait(0.1)
             end
         end
@@ -266,16 +257,7 @@ return function(SubTab, Window, myToken)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
-                pcall(function()
-                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-                    if Hitbox then
-                        local wx = gx * GRID_SIZE
-                        local wy = (gy + 1) * GRID_SIZE + OFFSET_Y
-                        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-                        movementModule.Position = Hitbox.Position
-                        MovPacket:FireServer(wx, wy)
-                    end
-                end)
+                moveTo(gx, gy + 1)
                 task.wait(0.1)
             end
         end
