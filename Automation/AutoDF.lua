@@ -410,73 +410,32 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ============================
-                    -- FASE 1: Break kolom kiri (X=0 dan X=1 sekaligus)
+                    -- FASE 1: Break kolom kiri (X=0 dan X=1)
                     -- ============================
                     PhaseLabel:SetText("Fase: 1 - Break Kiri")
-
-                    -- Cari Y tertinggi di kolom 0 dan 1
-                    local leftTopY = WORLD_MIN_Y
-                    for _, col in ipairs({0, 1}) do
-                        for gy = 60, WORLD_MIN_Y, -1 do
-                            if not isTileEmpty(col, gy) then
-                                if gy > leftTopY then leftTopY = gy end
-                                break
-                            end
-                        end
-                    end
-
-                    -- Jalan ke X=0, Y=leftTopY+1
-                    walkTo(0, leftTopY + 1, StatusLabel, "Ke kiri")
-
-                    local cy = leftTopY
-                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                        PosLabel:SetText(string.format("Posisi: (0-1, %d)", cy))
-                        -- Break X=0 dan X=1 dari posisi X=0 (masih bisa reach X=1)
-                        for _, col in ipairs({0, 1}) do
-                            if not isTileEmpty(col, cy) then
-                                breakTile(col, cy, 0)
-                            end
-                        end
-                        -- Turun 1
-                        cy = cy - 1
-                        if cy >= WORLD_MIN_Y then
-                            moveTo(0, cy + 1)
-                            task.wait(getgenv().DirtFarm_StepDelay)
+                    for gy = 60, WORLD_MIN_Y, -1 do
+                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                        local hasAny = not isTileEmpty(0, gy) or not isTileEmpty(1, gy)
+                        if hasAny then
+                            PosLabel:SetText(string.format("Posisi: (0-1, %d)", gy))
+                            walkTo(0, gy + 1, StatusLabel, "Break kiri")
+                            if not isTileEmpty(0, gy) then breakTile(0, gy, 0) end
+                            if not isTileEmpty(1, gy) then breakTile(1, gy, 0) end
                         end
                     end
 
                     -- ============================
-                    -- FASE 2: Break kolom kanan (X=99 dan X=100 sekaligus)
+                    -- FASE 2: Break kolom kanan (X=99 dan X=100)
                     -- ============================
                     PhaseLabel:SetText("Fase: 2 - Break Kanan")
-
-                    -- Cari Y tertinggi di kolom 99 dan 100
-                    local rightTopY = WORLD_MIN_Y
-                    for _, col in ipairs({99, 100}) do
-                        for gy = 60, WORLD_MIN_Y, -1 do
-                            if not isTileEmpty(col, gy) then
-                                if gy > rightTopY then rightTopY = gy end
-                                break
-                            end
-                        end
-                    end
-
-                    -- Pakai SmartPath ke X=100
-                    walkTo(100, rightTopY + 1, StatusLabel, "Ke kanan")
-
-                    cy = rightTopY
-                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                        PosLabel:SetText(string.format("Posisi: (99-100, %d)", cy))
-                        -- Break X=100 dan X=99 dari posisi X=100
-                        for _, col in ipairs({100, 99}) do
-                            if not isTileEmpty(col, cy) then
-                                breakTile(col, cy, 100)
-                            end
-                        end
-                        cy = cy - 1
-                        if cy >= WORLD_MIN_Y then
-                            moveTo(100, cy + 1)
-                            task.wait(getgenv().DirtFarm_StepDelay)
+                    for gy = 60, WORLD_MIN_Y, -1 do
+                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                        local hasAny = not isTileEmpty(99, gy) or not isTileEmpty(100, gy)
+                        if hasAny then
+                            PosLabel:SetText(string.format("Posisi: (99-100, %d)", gy))
+                            walkTo(100, gy + 1, StatusLabel, "Break kanan")
+                            if not isTileEmpty(100, gy) then breakTile(100, gy, 100) end
+                            if not isTileEmpty(99, gy) then breakTile(99, gy, 100) end
                         end
                     end
 
@@ -484,28 +443,23 @@ return function(SubTab, Window, myToken)
                     -- FASE 3: Break zigzag
                     -- ============================
                     PhaseLabel:SetText("Fase: 3 - Break Zigzag")
-                    walkTo(2, startY + 1, StatusLabel, "Ke start zigzag")
 
                     local goingRight = true
-                    local cx, cy = getGridPos()
-
-                    while cy > WORLD_MIN_Y + 2 and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                    for gy = startY, WORLD_MIN_Y + 2, -2 do
+                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                         local xStart = goingRight and 2 or 98
                         local xEnd   = goingRight and 98 or 2
                         local xStep  = goingRight and 1 or -1
 
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            walkTo(gx, cy, StatusLabel, "Zigzag break")
-                            PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
-                            -- Break 2 tile di bawah player
-                            breakTile(gx, cy - 2)
+                            -- Scan dulu, kalau kosong skip
+                            if not isTileEmpty(gx, gy) then
+                                PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, gy))
+                                walkTo(gx, gy + 1, StatusLabel, "Zigzag break")
+                                breakTile(gx, gy)
+                            end
                         end
-
-                        -- Turun 2
-                        cy = cy - 2
-                        if cy < WORLD_MIN_Y + 2 then break end
-                        walkTo(goingRight and 98 or 2, cy, StatusLabel, "Turun zigzag")
                         goingRight = not goingRight
                     end
 
