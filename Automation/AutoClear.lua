@@ -158,9 +158,12 @@ return function(SubTab, Window, myToken)
     -- [4] MOVEMENT
     -- ========================================
 
+    local GRID_SIZE  = 4.5
+    local OFFSET_Y   = -0.249640  -- offset exact Hitbox dari tengah tile
+
     local function snapToGrid(Hitbox)
-        local snappedX = math.floor(Hitbox.Position.X / 4.5 + 0.5) * 4.5
-        local snappedY = math.floor(Hitbox.Position.Y / 4.5 + 0.5) * 4.5
+        local snappedX = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5) * GRID_SIZE
+        local snappedY = math.floor(Hitbox.Position.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
         Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
         movementModule.Position = Hitbox.Position
         pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
@@ -194,8 +197,8 @@ return function(SubTab, Window, myToken)
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
             -- Snap ke tengah tile tujuan step ini
-            local snappedX = math.floor(point.X / 4.5 + 0.5) * 4.5
-            local snappedY = math.floor(point.Y / 4.5 + 0.5) * 4.5
+            local snappedX = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
+            local snappedY = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
             Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
