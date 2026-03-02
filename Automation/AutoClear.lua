@@ -20,8 +20,13 @@ return function(SubTab, Window, myToken)
     local OFFSET_Y    = -0.249640
 
     -- ========================================
-    -- [2] HELPERS
+    -- [1] HELPERS
     -- ========================================
+
+    -- Konversi grid coord ke world position (dengan OFFSET_Y supaya tepat di tengah grid)
+    local function gridToWorld(gx, gy)
+        return gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
+    end
 
     local function shouldSkip(itemName)
         if not itemName then return false end
@@ -77,16 +82,55 @@ return function(SubTab, Window, myToken)
         return topY
     end
 
-    local function isAtPosition(gx, gy)
-        local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if not char then return false end
-        local cx = math.floor(char.Position.X / GRID_SIZE + 0.5)
-        local cy = math.floor((char.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+    local function getHitbox()
+        return workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+    end
+
+    -- Ambil posisi grid sekarang dari Hitbox
+    local function getGridPos()
+        local Hitbox = getHitbox()
+        if not Hitbox then return 0, 0 end
+        return
+            math.floor(Hitbox.Position.X / GRID_SIZE + 0.5),
+            math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+    end
+
+    local function isAtGridPos(gx, gy)
+        local cx, cy = getGridPos()
         return cx == gx and cy == gy
     end
 
     -- ========================================
+    -- [2] MOVEMENT — ikut style AutoCollect
+    -- Langsung set CFrame ke world coord,
+    -- TIDAK bolak-balik konversi grid↔world di path
+    -- ========================================
+
+    local function moveTo(gx, gy)
+        local Hitbox = getHitbox()
+        if not Hitbox then return end
+        local wx, wy = gridToWorld(gx, gy)
+        -- Ikut cara AutoCollect: langsung assign CFrame + movementModule.Position
+        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+        movementModule.Position = Hitbox.Position
+        pcall(function() MovPacket:FireServer(wx, wy) end)
+    end
+
+    local function snapToGrid()
+        local Hitbox = getHitbox()
+        if not Hitbox then return end
+        local cx, cy = getGridPos()
+        local wx, wy = gridToWorld(cx, cy)
+        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+        movementModule.Position = Hitbox.Position
+        pcall(function() MovPacket:FireServer(wx, wy) end)
+    end
+
+    -- ========================================
     -- [3] PATHFINDING
+    -- Path menyimpan {x, y} grid coord langsung,
+    -- TIDAK disimpan sebagai world Vector3 untuk menghindari
+    -- floating point error saat convert balik
     -- ========================================
 
     local function isWalkable(gx, gy)
@@ -102,6 +146,7 @@ return function(SubTab, Window, myToken)
 
     local function findSmartPath(startX, startY, targetX, targetY)
         local startKey = startX .. "," .. startY
+        -- Queue simpan {x, y, cost, parent} — grid coord, bukan world pos
         local queue    = {{x=startX, y=startY, cost=0, parent=nil}}
         local visited  = {[startKey] = 0}
         local dirs     = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
@@ -141,55 +186,37 @@ return function(SubTab, Window, myToken)
         end
 
         if not found then return nil end
+
+        -- Bangun path sebagai array {x, y} grid coord — bukan Vector3 world pos
         local path, node = {}, found
         while node.parent ~= nil do
-            table.insert(path, 1, Vector3.new(node.x * GRID_SIZE, node.y * GRID_SIZE, 0))
+            table.insert(path, 1, {x = node.x, y = node.y})
             node = node.parent
         end
         return path
     end
 
     -- ========================================
-    -- [4] MOVEMENT
+    -- [4] WALK TO GRID
     -- ========================================
 
-    local function moveTo(gx, gy)
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-        if not Hitbox then return end
-        local wx = gx * GRID_SIZE
-        local wy = gy * GRID_SIZE + OFFSET_Y
-        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-        movementModule.Position = Hitbox.Position
-        pcall(function() MovPacket:FireServer(wx, wy) end)
-    end
-
-    local function snapToGrid()
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-        if not Hitbox then return end
-        local snappedX = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5) * GRID_SIZE
-        local snappedY = math.floor(Hitbox.Position.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
-        Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
-        movementModule.Position = Hitbox.Position
-        pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
-    end
-
     local function walkToGrid(gx, gy, StatusLabel)
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+        local Hitbox = getHitbox()
         if not Hitbox then return end
 
-        local sx = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5)
-        local sy = math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+        local sx, sy = getGridPos()
         if sx == gx and sy == gy then return end
 
-        -- Kalau target tidak walkable, cari tile kosong terdekat di sekitarnya
+        -- Kalau target tidak walkable, cari tile kosong terdekat
         local tgx, tgy = gx, gy
         if not isWalkable(gx, gy) then
             local found = false
             for radius = 1, 3 do
                 for dy = -radius, radius do
                     for dx = -radius, radius do
-                        if isWalkable(gx + dx, gy + dy) then
-                            tgx, tgy = gx + dx, gy + dy
+                        local nx, ny = gx + dx, gy + dy
+                        if isWalkable(nx, ny) then
+                            tgx, tgy = nx, ny
                             found = true
                             break
                         end
@@ -199,6 +226,7 @@ return function(SubTab, Window, myToken)
                 if found then break end
             end
             if not found then
+                -- Fallback: teleport langsung
                 moveTo(gx, gy)
                 task.wait(0.2)
                 return
@@ -212,35 +240,60 @@ return function(SubTab, Window, myToken)
             return
         end
 
-        for i, point in ipairs(path) do
+        -- Gerak ikut path — tiap step langsung set CFrame ke world coord
+        -- (Sama persis cara AutoCollect bergerak)
+        for i, step in ipairs(path) do
             if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
-            local px = math.floor(point.X / GRID_SIZE + 0.5)
-            local py = math.floor(point.Y / GRID_SIZE + 0.5)
-            moveTo(px, py)
+
+            -- step.x, step.y adalah grid coord murni — konversi sekali ke world pos
+            local wx, wy = gridToWorld(step.x, step.y)
+            local Hb = getHitbox()
+            if Hb then
+                Hb.CFrame = CFrame.new(wx, wy, Hb.Position.Z)
+                movementModule.Position = Hb.Position
+                pcall(function() MovPacket:FireServer(wx, wy) end)
+            end
+
             task.wait(getgenv().AutoClear_StepDelay)
         end
 
-        if not isAtPosition(tgx, tgy) then
+        -- Pastikan tepat di target setelah path selesai
+        if not isAtGridPos(tgx, tgy) then
             moveTo(tgx, tgy)
             task.wait(0.15)
         end
     end
 
+    -- ========================================
+    -- [5] BREAK TILE
+    -- Fly TIDAK dimatikan saat break — gravity bypass tetap jalan di task terpisah
+    -- Tambah maxTries supaya tidak infinite loop
+    -- ========================================
+
     local function breakTile(gx, gy)
         if isLockArea(gx, gy) then return end
         local pos = Vector2.new(gx, gy)
+        local maxTries = 300
 
+        -- Layer 1 (foreground)
+        local tries = 0
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
-            local tile   = worldData[gx] and worldData[gx][gy]
-            local layer1 = tile and tile[1]
+            tries = tries + 1
+            if tries > maxTries then break end  -- anti-infinite loop
+
+            local tile      = worldData[gx] and worldData[gx][gy]
+            local layer1    = tile and tile[1]
             if not layer1 then break end
-            local itemName = (type(layer1) == "table") and layer1[1] or layer1
+            local itemName  = (type(layer1) == "table") and layer1[1] or layer1
             if shouldSkip(itemName) then break end
-            if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy+1) * GRID_SIZE + OFFSET_Y) end)
+
+            if isAtGridPos(gx, gy + 1) then
+                -- Kirim posisi player sebagai world coord — fix: unpack dua nilai dari gridToWorld
+                local wx, wy = gridToWorld(gx, gy + 1)
+                pcall(function() MovPacket:FireServer(wx, wy) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
@@ -249,14 +302,21 @@ return function(SubTab, Window, myToken)
             end
         end
 
+        -- Layer 2 (background)
+        tries = 0
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
-            local tile   = worldData[gx] and worldData[gx][gy]
-            local layer2 = tile and tile[2]
+            tries = tries + 1
+            if tries > maxTries then break end  -- anti-infinite loop
+
+            local tile      = worldData[gx] and worldData[gx][gy]
+            local layer2    = tile and tile[2]
             if not layer2 then break end
-            local itemName = (type(layer2) == "table") and layer2[1] or layer2
+            local itemName  = (type(layer2) == "table") and layer2[1] or layer2
             if shouldSkip(itemName) then break end
-            if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy+1) * GRID_SIZE + OFFSET_Y) end)
+
+            if isAtGridPos(gx, gy + 1) then
+                local wx, wy = gridToWorld(gx, gy + 1)
+                pcall(function() MovPacket:FireServer(wx, wy) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
@@ -267,7 +327,7 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [5] UI
+    -- [6] UI
     -- ========================================
 
     SubTab:AddSection("AUTO CLEAR")
@@ -294,7 +354,7 @@ return function(SubTab, Window, myToken)
     SubTab:AddLabel("5. Matikan toggle untuk stop.")
 
     -- ========================================
-    -- [6] GRAVITY BYPASS
+    -- [7] GRAVITY BYPASS — tetap aktif saat break maupun jalan
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -309,7 +369,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [7] MAIN LOOP
+    -- [8] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
