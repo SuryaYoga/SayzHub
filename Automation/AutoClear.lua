@@ -174,42 +174,39 @@ return function(SubTab, Window, myToken)
         local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
         if not Hitbox then return end
 
-        -- Snap ke tengah grid dulu sebelum mulai jalan
-        snapToGrid(Hitbox)
-
-        local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-        local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+        local sx = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5)
+        local sy = math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
         if sx == gx and sy == gy then return end
 
         local path = findSmartPath(sx, sy, gx, gy)
         if not path then
-            Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
+            local wx, wy = gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(gx * 4.5, gy * 4.5) end)
+            pcall(function() MovPacket:FireServer(wx, wy) end)
             task.wait(0.2)
             return
         end
 
-        -- Jalan step by step, tiap step snap ke tengah tile
         for i, point in ipairs(path) do
             if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
-            -- Snap ke tengah tile tujuan step ini
-            local snappedX = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
-            local snappedY = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
-            Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
+            local wx = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
+            local wy = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
+            pcall(function() MovPacket:FireServer(wx, wy) end)
             task.wait(getgenv().AutoClear_StepDelay)
         end
 
         -- Cek posisi sekali setelah sampai tujuan
         if not isAtPosition(gx, gy) then
-            Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
+            local wx, wy = gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(gx * 4.5, gy * 4.5) end)
+            pcall(function() MovPacket:FireServer(wx, wy) end)
             task.wait(0.15)
         end
     end
@@ -218,8 +215,8 @@ return function(SubTab, Window, myToken)
     local function isAtPosition(gx, gy)
         local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if not char then return false end
-        local cx = math.floor(char.Position.X / 4.5 + 0.5)
-        local cy = math.floor(char.Position.Y / 4.5 + 0.5)
+        local cx = math.floor(char.Position.X / GRID_SIZE + 0.5)
+        local cy = math.floor((char.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
         return cx == gx and cy == gy
     end
 
@@ -238,7 +235,7 @@ return function(SubTab, Window, myToken)
             if shouldSkip(itemName) then break end
 
             if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5) end)
+                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy + 1) * GRID_SIZE + OFFSET_Y) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
@@ -246,9 +243,11 @@ return function(SubTab, Window, myToken)
                 pcall(function()
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     if Hitbox then
-                        Hitbox.CFrame = CFrame.new(gx * 4.5, (gy + 1) * 4.5, Hitbox.Position.Z)
+                        local wx = gx * GRID_SIZE
+                        local wy = (gy + 1) * GRID_SIZE + OFFSET_Y
+                        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
                         movementModule.Position = Hitbox.Position
-                        MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5)
+                        MovPacket:FireServer(wx, wy)
                     end
                 end)
                 task.wait(0.1)
@@ -264,16 +263,18 @@ return function(SubTab, Window, myToken)
             if shouldSkip(itemName) then break end
 
             if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5) end)
+                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy + 1) * GRID_SIZE + OFFSET_Y) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
                 pcall(function()
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     if Hitbox then
-                        Hitbox.CFrame = CFrame.new(gx * 4.5, (gy + 1) * 4.5, Hitbox.Position.Z)
+                        local wx = gx * GRID_SIZE
+                        local wy = (gy + 1) * GRID_SIZE + OFFSET_Y
+                        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
                         movementModule.Position = Hitbox.Position
-                        MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5)
+                        MovPacket:FireServer(wx, wy)
                     end
                 end)
                 task.wait(0.1)
@@ -334,6 +335,10 @@ return function(SubTab, Window, myToken)
         while _G.LatestRunToken == myToken do
             if getgenv().AutoClear_Enabled then
                 pcall(function()
+                    -- Snap sekali di awal sebelum mulai clear
+                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+                    if Hitbox then snapToGrid(Hitbox) end
+
                     StatusLabel:SetText("Status  : Mendeteksi area...")
 
                     local startY    = findTopY()
