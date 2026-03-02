@@ -167,7 +167,6 @@ return function(SubTab, Window, myToken)
         Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
         movementModule.Position = Hitbox.Position
         pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
-        task.wait(0.05)
     end
 
     local function walkToGrid(gx, gy, StatusLabel)
@@ -335,6 +334,11 @@ return function(SubTab, Window, myToken)
         while _G.LatestRunToken == myToken do
             if getgenv().AutoClear_Enabled then
                 pcall(function()
+                    -- Aktifkan gravity bypass dulu, baru snap
+                    movementModule.Grounded = true
+                    if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
+                    task.wait(0.1)
+
                     -- Snap sekali di awal sebelum mulai clear
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     if Hitbox then snapToGrid(Hitbox) end
