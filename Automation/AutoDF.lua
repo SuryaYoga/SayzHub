@@ -18,8 +18,8 @@ return function(SubTab, Window, myToken)
     getgenv().DirtFarm_BreakDelay = getgenv().DirtFarm_BreakDelay or 0.035
     getgenv().DirtFarm_StepDelay  = getgenv().DirtFarm_StepDelay  or 0.12
 
-    local GRID_SIZE   = 4.5
-    local OFFSET_Y    = -0.249640
+    local GRID_SIZE = 4.5
+    local OFFSET_Y  = -0.249640
     local WORLD_MIN_X = 0
     local WORLD_MAX_X = 100
     local WORLD_MIN_Y = 6
@@ -28,8 +28,7 @@ return function(SubTab, Window, myToken)
     -- [2] HELPERS
     -- ========================================
 
-    -- Konversi grid coord ke world position (dengan OFFSET_Y supaya tepat di tengah grid)
-    local function gridToWorld(gx, gy)
+    local function worldPos(gx, gy)
         return gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
     end
 
@@ -37,7 +36,6 @@ return function(SubTab, Window, myToken)
         return workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
     end
 
-    -- Ambil posisi grid sekarang dari Hitbox
     local function getGridPos()
         local Hitbox = getHitbox()
         if not Hitbox then return 0, 0 end
@@ -46,27 +44,21 @@ return function(SubTab, Window, myToken)
             math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
     end
 
-    local function isAtGridPos(gx, gy)
+    local function isAtPosition(gx, gy)
         local cx, cy = getGridPos()
         return cx == gx and cy == gy
     end
 
-    -- Movement ikut style AutoCollect: langsung set CFrame ke world coord
     local function moveTo(gx, gy)
         local Hitbox = getHitbox()
         if not Hitbox then return end
-        local wx, wy = gridToWorld(gx, gy)
+        local wx, wy = worldPos(gx, gy)
         Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
         movementModule.Position = Hitbox.Position
-        -- Fix bug lama: worldPos return 2 nilai tapi tidak di-unpack — sekarang sudah benar
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
 
-    -- ========================================
-    -- [3] PATHFINDING
-    -- Path simpan {x, y} grid coord langsung — tidak disimpan sebagai Vector3 world pos
-    -- ========================================
-
+    -- Pathfinding
     local function isWalkable(gx, gy)
         if gx < WORLD_MIN_X or gx > WORLD_MAX_X or gy < WORLD_MIN_Y or gy > 60 then
             return false
@@ -83,18 +75,15 @@ return function(SubTab, Window, myToken)
 
     local function findSmartPath(startX, startY, targetX, targetY)
         local startKey = startX .. "," .. startY
-        -- Queue simpan {x, y, cost, parent} — grid coord, bukan world pos
         local queue    = {{x=startX, y=startY, cost=0, parent=nil}}
         local visited  = {[startKey] = 0}
         local dirs     = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
         local found    = nil
         local limit    = 0
-
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limit = limit + 1
             if limit > 4000 then break end
-
             local minIdx, minCost = 1, queue[1].cost
             for i = 2, #queue do
                 if queue[i].cost < minCost then
@@ -103,12 +92,7 @@ return function(SubTab, Window, myToken)
                 end
             end
             local cur = table.remove(queue, minIdx)
-
-            if cur.x == targetX and cur.y == targetY then
-                found = cur
-                break
-            end
-
+            if cur.x == targetX and cur.y == targetY then found = cur break end
             for _, d in ipairs(dirs) do
                 local nx, ny = cur.x + d.x, cur.y + d.y
                 local nkey   = nx .. "," .. ny
@@ -121,19 +105,16 @@ return function(SubTab, Window, myToken)
                 end
             end
         end
-
         if not found then return nil end
-
-        -- Bangun path sebagai array {x, y} grid coord — bukan Vector3
         local path, node = {}, found
         while node.parent ~= nil do
-            table.insert(path, 1, {x = node.x, y = node.y})
+            table.insert(path, 1, Vector3.new(node.x * GRID_SIZE, node.y * GRID_SIZE, 0))
             node = node.parent
         end
         return path
     end
 
-    -- Jalan ke (gx, gy) — ikut style AutoCollect
+    -- Jalan ke (gx, gy) pakai SmartPath tapi gerak pakai moveTo simpel
     local function walkTo(gx, gy, StatusLabel, label)
         local Hitbox = getHitbox()
         if not Hitbox then return end
@@ -148,33 +129,22 @@ return function(SubTab, Window, myToken)
             return
         end
 
-        for i, step in ipairs(path) do
+        for i, point in ipairs(path) do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #path))
             end
-
-            -- step.x, step.y adalah grid coord murni — konversi sekali ke world pos
-            local wx, wy = gridToWorld(step.x, step.y)
-            local Hb = getHitbox()
-            if Hb then
-                Hb.CFrame = CFrame.new(wx, wy, Hb.Position.Z)
-                movementModule.Position = Hb.Position
-                pcall(function() MovPacket:FireServer(wx, wy) end)
-            end
-
+            local px = math.floor(point.X / GRID_SIZE + 0.5)
+            local py = math.floor(point.Y / GRID_SIZE + 0.5)
+            moveTo(px, py)
             task.wait(getgenv().DirtFarm_StepDelay)
         end
 
-        if not isAtGridPos(gx, gy) then
+        if not isAtPosition(gx, gy) then
             moveTo(gx, gy)
             task.wait(0.15)
         end
     end
-
-    -- ========================================
-    -- [4] TILE HELPERS
-    -- ========================================
 
     local function isTileEmpty(gx, gy)
         local tile = worldData[gx] and worldData[gx][gy]
@@ -184,9 +154,9 @@ return function(SubTab, Window, myToken)
     local function shouldSkip(itemName)
         if not itemName then return false end
         local n = string.lower(tostring(itemName))
-        if string.find(n, "lock") then return true end
-        if string.find(n, "door") then return true end
-        if n == "bedrock"         then return true end
+        if string.find(n, "lock")    then return true end
+        if string.find(n, "door")    then return true end
+        if n == "bedrock"            then return true end
         return false
     end
 
@@ -206,102 +176,85 @@ return function(SubTab, Window, myToken)
         return itemName
     end
 
-    -- ========================================
-    -- [5] BREAK TILE
-    -- Fly TIDAK dimatikan saat break — gravity bypass tetap jalan di task terpisah
-    -- Tambah maxTries supaya tidak infinite loop
-    -- ========================================
+    -- Break tile (gx, gy) sampai kosong, player harus di (gx, gy+1)
+    local function breakTile(gx, gy, playerX)
+        playerX = playerX or gx
+        local pos = Vector2.new(gx, gy)
 
-    local function breakTile(gx, gy)
-        local pos     = Vector2.new(gx, gy)
-        local maxTries = 300
-
-        -- Layer 1 (foreground)
-        local tries = 0
+        -- Layer 1
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
-            tries = tries + 1
-            if tries > maxTries then break end
-
             if not getTileLayer1(gx, gy) then break end
-
-            if isAtGridPos(gx, gy + 1) then
-                -- Fix bug lama: unpack 2 nilai dari gridToWorld dengan benar
-                local wx, wy = gridToWorld(gx, gy + 1)
-                pcall(function() MovPacket:FireServer(wx, wy) end)
+            if isAtPosition(playerX, gy + 1) then
+                pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().DirtFarm_BreakDelay)
             else
-                moveTo(gx, gy + 1)
+                moveTo(playerX, gy + 1)
                 task.wait(0.1)
             end
         end
 
         -- Layer 2 (background)
-        tries = 0
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
-            tries = tries + 1
-            if tries > maxTries then break end
-
             if not getTileLayer2(gx, gy) then break end
-
-            if isAtGridPos(gx, gy + 1) then
-                local wx, wy = gridToWorld(gx, gy + 1)
-                pcall(function() MovPacket:FireServer(wx, wy) end)
+            if isAtPosition(playerX, gy + 1) then
+                pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().DirtFarm_BreakDelay)
             else
-                moveTo(gx, gy + 1)
+                moveTo(playerX, gy + 1)
                 task.wait(0.1)
             end
         end
     end
 
-    -- ========================================
-    -- [6] INVENTORY HELPERS
-    -- ========================================
-
-    local function getInventorySlot(itemId)
-        local InventoryMod = require(
-            LP.PlayerScripts:FindFirstChild("InventoryModule") or
-            LP.PlayerScripts:FindFirstChild("Inventory")
-        )
-        if not InventoryMod then return nil, 0 end
+    -- Cari slot dirt_sapling di inventory
+    local function getDirtSaplingSlot()
+        local InventoryMod = require(LP.PlayerScripts:FindFirstChild("InventoryModule") 
+            or LP.PlayerScripts:FindFirstChild("Inventory"))
+        if not InventoryMod then return nil end
         local stacks = InventoryMod.Stacks or InventoryMod.stacks
-        if not stacks then return nil, 0 end
+        if not stacks then return nil end
         for i, stack in pairs(stacks) do
-            if stack and tostring(stack.Id) == itemId then
+            if stack and tostring(stack.Id) == "dirt_sapling" then
                 return i, stack.Amount or 0
             end
         end
         return nil, 0
     end
 
+    -- Cari slot dirt di inventory
+    local function getDirtSlot()
+        local InventoryMod = require(LP.PlayerScripts:FindFirstChild("InventoryModule")
+            or LP.PlayerScripts:FindFirstChild("Inventory"))
+        if not InventoryMod then return nil end
+        local stacks = InventoryMod.Stacks or InventoryMod.stacks
+        if not stacks then return nil end
+        for i, stack in pairs(stacks) do
+            if stack and tostring(stack.Id) == "dirt" then
+                return i, stack.Amount or 0
+            end
+        end
+        return nil, 0
+    end
+
+    -- Place dirt di (gx, gy)
     local function placeDirt(gx, gy)
-        local slotIdx, amount = getInventorySlot("dirt")
+        local slotIdx, amount = getDirtSlot()
         if not slotIdx or amount <= 0 then return false end
         PlayerPlace:FireServer(Vector2.new(gx, gy), slotIdx, 1)
         task.wait(0.1)
         return true
     end
 
-    -- ========================================
-    -- [7] HARVEST
-    -- ========================================
-
+    -- Break sapling di tile yang sama dengan player (gx, gy)
     local function harvestTile(gx, gy)
-        local pos     = Vector2.new(gx, gy)
-        local maxTries = 300
-        local tries   = 0
+        local pos = Vector2.new(gx, gy)
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
-            tries = tries + 1
-            if tries > maxTries then break end
-
             local tile = worldData[gx] and worldData[gx][gy]
             if not tile or tile[1] == nil then break end
-
-            if isAtGridPos(gx, gy) then
-                local wx, wy = gridToWorld(gx, gy)
-                pcall(function() MovPacket:FireServer(wx, wy) end)
+            if isAtPosition(gx, gy) then
+                pcall(function() MovPacket:FireServer(worldPos(gx, gy)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().DirtFarm_BreakDelay)
             else
@@ -311,9 +264,11 @@ return function(SubTab, Window, myToken)
         end
     end
 
+    -- Collect semua drop item di range X, Y area panen
     local function collectDropsInArea(minX, maxX, areaY, StatusLabel)
         StatusLabel:SetText("Status: Collecting drops...")
-        for attempt = 1, 3 do
+        local maxAttempts = 3
+        for attempt = 1, maxAttempts do
             local found = false
             local folders = {"Drops"}
             for _, folderName in pairs(folders) do
@@ -324,6 +279,7 @@ return function(SubTab, Window, myToken)
                         local pos = item:GetPivot().Position
                         local ix = math.floor(pos.X / GRID_SIZE + 0.5)
                         local iy = math.floor((pos.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+                        -- Cek apakah item ada di area panen
                         if ix >= minX and ix <= maxX and math.abs(iy - areaY) <= 3 then
                             found = true
                             walkTo(ix, iy, StatusLabel, "Collect")
@@ -337,26 +293,28 @@ return function(SubTab, Window, myToken)
         end
     end
 
+    -- Tanam 10 dirt_sapling, tunggu 30s, panen, collect
     local function plantAndHarvest(currentX, currentY, StatusLabel)
-        local slotIdx = getInventorySlot("dirt_sapling")
+        local slotIdx = getDirtSaplingSlot()
         if not slotIdx then
             Window:Notify("Tidak ada dirt_sapling di inventory!", 3)
             return
         end
 
         StatusLabel:SetText("Status: Menanam sapling...")
-        local goLeft           = currentX > 50
+        local goLeft = currentX > 50
         local plantedPositions = {}
 
         for i = 1, 10 do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-            slotIdx = getInventorySlot("dirt_sapling")
+            slotIdx = getDirtSaplingSlot()
             if not slotIdx then break end
 
             local plantX = goLeft and (currentX - i + 1) or (currentX + i - 1)
             plantX = math.clamp(plantX, WORLD_MIN_X + 2, WORLD_MAX_X - 2)
 
             walkTo(plantX, currentY, StatusLabel, "Ke titik tanam")
+            -- Plant di tile yang sama dengan posisi player
             PlayerPlace:FireServer(Vector2.new(plantX, currentY), slotIdx, 1)
             table.insert(plantedPositions, {x = plantX, y = currentY})
             task.wait(0.15)
@@ -369,7 +327,7 @@ return function(SubTab, Window, myToken)
             task.wait(1)
         end
 
-        -- Panen
+        -- Panen: break sapling di tile yang sama dengan player
         StatusLabel:SetText("Status: Memanen...")
         for _, plantPos in ipairs(plantedPositions) do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
@@ -377,18 +335,22 @@ return function(SubTab, Window, myToken)
             harvestTile(plantPos.x, plantPos.y)
         end
 
-        -- Collect drop area panen
-        local xs = {}
-        for _, p in ipairs(plantedPositions) do table.insert(xs, p.x) end
-        if #xs > 0 then
-            local minX = math.min(table.unpack(xs))
-            local maxX = math.max(table.unpack(xs))
-            collectDropsInArea(minX, maxX, currentY, StatusLabel)
-        end
+        -- Collect drop yang ketinggalan di area panen
+        local minX = math.min(table.unpack((function()
+            local xs = {}
+            for _, p in ipairs(plantedPositions) do table.insert(xs, p.x) end
+            return xs
+        end)()))
+        local maxX = math.max(table.unpack((function()
+            local xs = {}
+            for _, p in ipairs(plantedPositions) do table.insert(xs, p.x) end
+            return xs
+        end)()))
+        collectDropsInArea(minX, maxX, currentY, StatusLabel)
     end
 
     -- ========================================
-    -- [8] GRAVITY BYPASS — tetap aktif saat break maupun jalan
+    -- [3] GRAVITY BYPASS
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -403,7 +365,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [9] UI
+    -- [4] UI
     -- ========================================
     SubTab:AddSection("DIRT FARM")
     getgenv().SayzUI_Handles["DirtFarm_Master"] = SubTab:AddToggle("Enable Dirt Farm", getgenv().DirtFarm_Enabled, function(t)
@@ -429,7 +391,7 @@ return function(SubTab, Window, myToken)
     SubTab:AddLabel("        Kalau dirt habis: tanam 10 sapling, tunggu 30s, panen")
 
     -- ========================================
-    -- [10] MAIN LOOP
+    -- [5] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -448,34 +410,73 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ============================
-                    -- FASE 1: Break kolom kiri
+                    -- FASE 1: Break kolom kiri (X=0 dan X=1 sekaligus)
                     -- ============================
                     PhaseLabel:SetText("Fase: 1 - Break Kiri")
+
+                    -- Cari Y tertinggi di kolom 0 dan 1
+                    local leftTopY = WORLD_MIN_Y
                     for _, col in ipairs({0, 1}) do
-                        walkTo(col, startY + 1, StatusLabel, "Ke kiri")
-                        local y = startY
-                        while y >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                            PosLabel:SetText(string.format("Posisi: (%d, %d)", col, y))
-                            local cx, cy = getGridPos()
-                            breakTile(col, cy - 1)
-                            walkTo(col, cy - 1, StatusLabel, "Turun kiri")
-                            y = y - 1
+                        for gy = 60, WORLD_MIN_Y, -1 do
+                            if not isTileEmpty(col, gy) then
+                                if gy > leftTopY then leftTopY = gy end
+                                break
+                            end
+                        end
+                    end
+
+                    -- Jalan ke X=0, Y=leftTopY+1
+                    walkTo(0, leftTopY + 1, StatusLabel, "Ke kiri")
+
+                    local cy = leftTopY
+                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                        PosLabel:SetText(string.format("Posisi: (0-1, %d)", cy))
+                        -- Break X=0 dan X=1 dari posisi X=0 (masih bisa reach X=1)
+                        for _, col in ipairs({0, 1}) do
+                            if not isTileEmpty(col, cy) then
+                                breakTile(col, cy, 0)
+                            end
+                        end
+                        -- Turun 1
+                        cy = cy - 1
+                        if cy >= WORLD_MIN_Y then
+                            moveTo(0, cy + 1)
+                            task.wait(getgenv().DirtFarm_StepDelay)
                         end
                     end
 
                     -- ============================
-                    -- FASE 2: Break kolom kanan
+                    -- FASE 2: Break kolom kanan (X=99 dan X=100 sekaligus)
                     -- ============================
                     PhaseLabel:SetText("Fase: 2 - Break Kanan")
-                    for _, col in ipairs({100, 99}) do
-                        walkTo(col, startY + 1, StatusLabel, "Ke kanan")
-                        local y = startY
-                        while y >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                            PosLabel:SetText(string.format("Posisi: (%d, %d)", col, y))
-                            local cx, cy = getGridPos()
-                            breakTile(col, cy - 1)
-                            walkTo(col, cy - 1, StatusLabel, "Turun kanan")
-                            y = y - 1
+
+                    -- Cari Y tertinggi di kolom 99 dan 100
+                    local rightTopY = WORLD_MIN_Y
+                    for _, col in ipairs({99, 100}) do
+                        for gy = 60, WORLD_MIN_Y, -1 do
+                            if not isTileEmpty(col, gy) then
+                                if gy > rightTopY then rightTopY = gy end
+                                break
+                            end
+                        end
+                    end
+
+                    -- Pakai SmartPath ke X=100
+                    walkTo(100, rightTopY + 1, StatusLabel, "Ke kanan")
+
+                    cy = rightTopY
+                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                        PosLabel:SetText(string.format("Posisi: (99-100, %d)", cy))
+                        -- Break X=100 dan X=99 dari posisi X=100
+                        for _, col in ipairs({100, 99}) do
+                            if not isTileEmpty(col, cy) then
+                                breakTile(col, cy, 100)
+                            end
+                        end
+                        cy = cy - 1
+                        if cy >= WORLD_MIN_Y then
+                            moveTo(100, cy + 1)
+                            task.wait(getgenv().DirtFarm_StepDelay)
                         end
                     end
 
@@ -497,9 +498,11 @@ return function(SubTab, Window, myToken)
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                             walkTo(gx, cy, StatusLabel, "Zigzag break")
                             PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
+                            -- Break 2 tile di bawah player
                             breakTile(gx, cy - 2)
                         end
 
+                        -- Turun 2
                         cy = cy - 2
                         if cy < WORLD_MIN_Y + 2 then break end
                         walkTo(goingRight and 98 or 2, cy, StatusLabel, "Turun zigzag")
@@ -511,6 +514,7 @@ return function(SubTab, Window, myToken)
                     -- ============================
                     PhaseLabel:SetText("Fase: 4 - Place Dirt")
 
+                    -- Naik ke posisi paling bawah dulu
                     walkTo(2, WORLD_MIN_Y + 2, StatusLabel, "Ke start place")
                     cx, cy = getGridPos()
                     goingRight = true
@@ -526,14 +530,18 @@ return function(SubTab, Window, myToken)
                             walkTo(gx, cy, StatusLabel, "Place dirt")
                             PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
 
+                            -- Place dirt 1 tile di atas kepala
                             local placed = placeDirt(gx, cy + 1)
                             if not placed then
+                                -- Dirt habis, tanam sapling dulu
                                 plantAndHarvest(gx, cy, StatusLabel)
+                                -- Coba place lagi setelah panen
                                 placeDirt(gx, cy + 1)
                             end
                             task.wait(0.1)
                         end
 
+                        -- Naik 2
                         cy = cy + 2
                         if cy > startY then break end
                         walkTo(goingRight and 98 or 2, cy, StatusLabel, "Naik place")
