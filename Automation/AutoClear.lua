@@ -158,9 +158,21 @@ return function(SubTab, Window, myToken)
     -- [4] MOVEMENT
     -- ========================================
 
+    local function snapToGrid(Hitbox)
+        local snappedX = math.floor(Hitbox.Position.X / 4.5 + 0.5) * 4.5
+        local snappedY = math.floor(Hitbox.Position.Y / 4.5 + 0.5) * 4.5
+        Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
+        movementModule.Position = Hitbox.Position
+        pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
+        task.wait(0.05)
+    end
+
     local function walkToGrid(gx, gy, StatusLabel)
         local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
         if not Hitbox then return end
+
+        -- Snap ke tengah grid dulu sebelum mulai jalan
+        snapToGrid(Hitbox)
 
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
@@ -175,20 +187,22 @@ return function(SubTab, Window, myToken)
             return
         end
 
-        -- Jalan step by step seperti autocollect
+        -- Jalan step by step, tiap step snap ke tengah tile
         for i, point in ipairs(path) do
             if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
-            Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
+            -- Snap ke tengah tile tujuan step ini
+            local snappedX = math.floor(point.X / 4.5 + 0.5) * 4.5
+            local snappedY = math.floor(point.Y / 4.5 + 0.5) * 4.5
+            Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(point.X, point.Y) end)
+            pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
             task.wait(getgenv().AutoClear_StepDelay)
         end
 
-        -- Cek posisi hanya sekali setelah sampai tujuan
-        -- Kalau belum bener, sync ulang dan tunggu sebentar
+        -- Cek posisi sekali setelah sampai tujuan
         if not isAtPosition(gx, gy) then
             Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
