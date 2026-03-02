@@ -58,7 +58,63 @@ return function(SubTab, Window, myToken)
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
 
-    -- Jalan step by step ke (gx, gy)
+    -- Pathfinding
+    local function isWalkable(gx, gy)
+        if gx < WORLD_MIN_X or gx > WORLD_MAX_X or gy < WORLD_MIN_Y or gy > 60 then
+            return false
+        end
+        if worldData[gx] and worldData[gx][gy] and worldData[gx][gy][1] ~= nil then
+            local l1 = worldData[gx][gy][1]
+            local n = string.lower(tostring((type(l1) == "table") and l1[1] or l1))
+            -- Sapling bisa dilewati
+            if string.find(n, "sapling") then return true end
+            return false
+        end
+        return true
+    end
+
+    local function findSmartPath(startX, startY, targetX, targetY)
+        local startKey = startX .. "," .. startY
+        local queue    = {{x=startX, y=startY, cost=0, parent=nil}}
+        local visited  = {[startKey] = 0}
+        local dirs     = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local found    = nil
+        local limit    = 0
+        while #queue > 0 do
+            if _G.LatestRunToken ~= myToken then break end
+            limit = limit + 1
+            if limit > 4000 then break end
+            local minIdx, minCost = 1, queue[1].cost
+            for i = 2, #queue do
+                if queue[i].cost < minCost then
+                    minCost = queue[i].cost
+                    minIdx  = i
+                end
+            end
+            local cur = table.remove(queue, minIdx)
+            if cur.x == targetX and cur.y == targetY then found = cur break end
+            for _, d in ipairs(dirs) do
+                local nx, ny = cur.x + d.x, cur.y + d.y
+                local nkey   = nx .. "," .. ny
+                if isWalkable(nx, ny) then
+                    local nc = cur.cost + 1
+                    if not visited[nkey] or nc < visited[nkey] then
+                        visited[nkey] = nc
+                        table.insert(queue, {x=nx, y=ny, cost=nc, parent=cur})
+                    end
+                end
+            end
+        end
+        if not found then return nil end
+        local path, node = {}, found
+        while node.parent ~= nil do
+            table.insert(path, 1, Vector3.new(node.x * GRID_SIZE, node.y * GRID_SIZE, 0))
+            node = node.parent
+        end
+        return path
+    end
+
+    -- Jalan ke (gx, gy) pakai SmartPath
     local function walkTo(gx, gy, StatusLabel, label)
         local Hitbox = getHitbox()
         if not Hitbox then return end
@@ -66,37 +122,34 @@ return function(SubTab, Window, myToken)
         local sx, sy = getGridPos()
         if sx == gx and sy == gy then return end
 
-        -- Pathfinding sederhana: gerak X dulu lalu Y
-        -- (area dirt farm sudah di-clear jadi tidak perlu smartpath penuh)
-        local steps = {}
-
-        -- Gerak X
-        local xStep = (gx > sx) and 1 or -1
-        local cx = sx
-        while cx ~= gx do
-            cx = cx + xStep
-            table.insert(steps, {cx, sy})
-        end
-        -- Gerak Y
-        local yStep = (gy > sy) and 1 or -1
-        local cy = sy
-        while cy ~= gy do
-            cy = cy + yStep
-            table.insert(steps, {gx, cy})
+        local path = findSmartPath(sx, sy, gx, gy)
+        if not path then
+            local wx, wy = worldPos(gx, gy)
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+            movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(wx, wy) end)
+            task.wait(0.2)
+            return
         end
 
-        for i, step in ipairs(steps) do
+        for i, point in ipairs(path) do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
             if StatusLabel then
-                StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #steps))
+                StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #path))
             end
-            moveTo(step[1], step[2])
+            local wx = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
+            local wy = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+            movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(wx, wy) end)
             task.wait(getgenv().DirtFarm_StepDelay)
         end
 
-        -- Final snap
         if not isAtPosition(gx, gy) then
-            moveTo(gx, gy)
+            local wx, wy = worldPos(gx, gy)
+            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+            movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(wx, wy) end)
             task.wait(0.15)
         end
     end
