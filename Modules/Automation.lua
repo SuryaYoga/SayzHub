@@ -3,6 +3,7 @@ return function(Window)
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
     local ClearSub = OtomatisTab:AddSubTab("Auto Clear")
     local DropSub = OtomatisTab:AddSubTab("Auto Drop")
+    local DFSub = OtomatisTab:AddSubTab("Auto Dirt Farm")
 
     -- Ambil token untuk memastikan loop di sub-modul bisa berhenti total
     local myToken = _G.LatestRunToken
@@ -54,5 +55,7 @@ return function(Window)
     LoadFitur("AutoPnB.lua", PnBSub)
     LoadFitur("AutoClear.lua", ClearSub)
     LoadFitur("AutoDrop.lua", DropSub)
+    LoadFitur("AutoDF.lua", DFSub)
 end
+
 
