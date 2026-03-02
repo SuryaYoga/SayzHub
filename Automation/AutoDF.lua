@@ -201,25 +201,25 @@ return function(SubTab, Window, myToken)
         return itemName
     end
 
-    -- Break tile (gx, gy) sampai kosong, player harus di (gx, gy+1)
-    -- SEKARANG: skip kalau isLockArea atau shouldSkip
+    -- Break tile (gx, gy), player harus di (playerX, gy+2) — 2 tile di atas target
+    -- Skip kalau lock/door/bedrock/lockArea
     local function breakTile(gx, gy, playerX)
-        -- Guard: jangan break kalau lock area atau tile mengandung item terlarang
         if isLockArea(gx, gy) then return end
 
         playerX = playerX or gx
+        local playerY = gy + 2   -- player selalu 2 tile di atas target
         local pos = Vector2.new(gx, gy)
 
         -- Layer 1
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
             if not getTileLayer1(gx, gy) then break end
-            if isLockArea(gx, gy) then break end  -- re-check tiap iterasi
-            if isAtPosition(playerX, gy + 1) then
-                pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
+            if isLockArea(gx, gy) then break end
+            if isAtPosition(playerX, playerY) then
+                pcall(function() MovPacket:FireServer(worldPos(playerX, playerY)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().DirtFarm_BreakDelay)
             else
-                moveTo(playerX, gy + 1)
+                moveTo(playerX, playerY)
                 task.wait(0.1)
             end
         end
@@ -227,13 +227,13 @@ return function(SubTab, Window, myToken)
         -- Layer 2 (background)
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
             if not getTileLayer2(gx, gy) then break end
-            if isLockArea(gx, gy) then break end  -- re-check tiap iterasi
-            if isAtPosition(playerX, gy + 1) then
-                pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
+            if isLockArea(gx, gy) then break end
+            if isAtPosition(playerX, playerY) then
+                pcall(function() MovPacket:FireServer(worldPos(playerX, playerY)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().DirtFarm_BreakDelay)
             else
-                moveTo(playerX, gy + 1)
+                moveTo(playerX, playerY)
                 task.wait(0.1)
             end
         end
@@ -483,38 +483,72 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE 3: Break zigzag
+                    -- player di playerRow (genap) = startY + 1 (kalau ganjil +1 lagi supaya genap)
+                    -- break di playerRow - 2 (genap juga)
+                    -- turun 2-2 pakai smartpath
                     -- ============================
                     PhaseLabel:SetText("Fase: 3 - Break Zigzag")
 
+                    -- Pastikan playerRow genap
+                    local playerRow = startY + 1
+                    if playerRow % 2 ~= 0 then playerRow = playerRow + 1 end
+
+                    -- breakRow = playerRow - 2, juga pasti genap
+                    -- Loop turun: playerRow turun 2 tiap row, sampai breakRow >= WORLD_MIN_Y
                     local goingRight = true
-                    for gy = startY, WORLD_MIN_Y + 2, -2 do
+
+                    -- Mulai dari x=2, playerRow
+                    walkTo(2, playerRow, StatusLabel, "Ke start zigzag")
+
+                    local currentPlayerRow = playerRow
+                    while currentPlayerRow - 2 >= WORLD_MIN_Y do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                        local xStart = goingRight and 2 or 98
-                        local xEnd   = goingRight and 98 or 2
-                        local xStep  = goingRight and 1 or -1
+
+                        local breakRow = currentPlayerRow - 2
+                        local xStart   = goingRight and 2 or 98
+                        local xEnd     = goingRight and 98 or 2
+                        local xStep    = goingRight and 1 or -1
 
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            -- Skip lock area dan tile kosong
-                            if not isTileEmpty(gx, gy) and not isLockArea(gx, gy) then
-                                PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, gy))
-                                walkTo(gx, gy + 1, StatusLabel, "Zigzag break")
-                                breakTile(gx, gy)
+
+                            -- Cek ada block yang perlu di-break di breakRow
+                            if not isTileEmpty(gx, breakRow) and not isLockArea(gx, breakRow) then
+                                -- Pastikan player di posisi (gx, currentPlayerRow)
+                                if not isAtPosition(gx, currentPlayerRow) then
+                                    walkTo(gx, currentPlayerRow, StatusLabel, "Zigzag")
+                                end
+                                PosLabel:SetText(string.format("Posisi: (%d,%d) Break: (%d,%d)", gx, currentPlayerRow, gx, breakRow))
+                                breakTile(gx, breakRow, gx)
                             end
                         end
+
+                        -- Turun 2: smartpath ke ujung row bawah
+                        local nextRow = currentPlayerRow - 2
+                        if nextRow - 2 < WORLD_MIN_Y then break end
+                        local nextX = goingRight and 98 or 2
+                        walkTo(nextX, nextRow, StatusLabel, "Turun row")
+                        currentPlayerRow = nextRow
                         goingRight = not goingRight
                     end
 
                     -- ============================
                     -- FASE 4: Place dirt zigzag (naik dari bawah)
+                    -- player di y genap, place 1 tile di atas (y+1)
+                    -- naik 2-2 pakai smartpath
                     -- ============================
                     PhaseLabel:SetText("Fase: 4 - Place Dirt")
 
-                    -- Naik ke posisi paling bawah dulu
-                    walkTo(2, WORLD_MIN_Y + 2, StatusLabel, "Ke start place")
-                    local cx, cy = getGridPos()
+                    -- Mulai dari bawah, y genap paling bawah
+                    local placeStartY = WORLD_MIN_Y
+                    if placeStartY % 2 ~= 0 then placeStartY = placeStartY + 1 end
+
+                    walkTo(2, placeStartY, StatusLabel, "Ke start place")
+
+                    local cy = placeStartY
                     goingRight = true
 
+                    -- Naik sampai cy+1 = startY (top block area, kita place sampai setinggi itu)
                     while cy <= startY and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
                         local xStart = goingRight and 2 or 98
                         local xEnd   = goingRight and 98 or 2
@@ -523,29 +557,34 @@ return function(SubTab, Window, myToken)
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
-                            -- Skip place kalau tile target lock area
-                            if isLockArea(gx, cy + 1) then
-                                -- lewati, jangan place
+                            -- Skip kalau tile di atas (place target) adalah lock/bedrock/door
+                            local placeY = cy + 1
+                            if isLockArea(gx, placeY) or shouldSkip(getTileLayer1(gx, placeY)) then
+                                -- skip
                             else
-                                walkTo(gx, cy, StatusLabel, "Place dirt")
-                                PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
+                                if not isAtPosition(gx, cy) then
+                                    walkTo(gx, cy, StatusLabel, "Place dirt")
+                                end
+                                PosLabel:SetText(string.format("Posisi: (%d,%d) Place: (%d,%d)", gx, cy, gx, placeY))
 
-                                -- Place dirt 1 tile di atas kepala
-                                local placed = placeDirt(gx, cy + 1)
+                                -- Place dirt 1 tile di atas player
+                                local placed = placeDirt(gx, placeY)
                                 if not placed then
-                                    -- Dirt habis, tanam sapling dulu
+                                    -- Dirt habis, farming sapling dulu
                                     plantAndHarvest(gx, cy, StatusLabel)
                                     -- Coba place lagi setelah panen
-                                    placeDirt(gx, cy + 1)
+                                    placeDirt(gx, placeY)
                                 end
-                                task.wait(0.1)
+                                task.wait(0.05)
                             end
                         end
 
                         -- Naik 2
-                        cy = cy + 2
-                        if cy > startY then break end
-                        walkTo(goingRight and 98 or 2, cy, StatusLabel, "Naik place")
+                        local nextCy = cy + 2
+                        if nextCy > startY then break end
+                        local nextX = goingRight and 98 or 2
+                        walkTo(nextX, nextCy, StatusLabel, "Naik place")
+                        cy = nextCy
                         goingRight = not goingRight
                     end
 
