@@ -1,7 +1,7 @@
 return function(Window)
     local OtomatisTab = Window:AddMainTab("Automation")
     local PnBSub = OtomatisTab:AddSubTab("Auto PnB")
-    local CollectSub = OtomatisTab:AddSubTab("Auto Collect")
+    local ClearSub = OtomatisTab:AddSubTab("Auto Clear")
     local DropSub = OtomatisTab:AddSubTab("Auto Drop")
 
     -- Ambil token untuk memastikan loop di sub-modul bisa berhenti total
@@ -52,6 +52,7 @@ return function(Window)
     end
 
     LoadFitur("AutoPnB.lua", PnBSub)
-    LoadFitur("AutoCollect.lua", CollectSub)
+    LoadFitur("AutoClear.lua", ClearSub)
     LoadFitur("AutoDrop.lua", DropSub)
 end
+
