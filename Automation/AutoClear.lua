@@ -164,9 +164,10 @@ return function(SubTab, Window, myToken)
 
         local path = findSmartPath(sx, sy, gx, gy)
         if not path then
-            -- Fallback teleport kalau tidak ada path
+            -- Fallback teleport
             Hitbox.CFrame = CFrame.new(gx * 4.5, gy * 4.5, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
+            task.wait(0.2)
             return
         end
 
@@ -175,25 +176,61 @@ return function(SubTab, Window, myToken)
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
+
+            local px = math.floor(point.X / 4.5 + 0.5)
+            local py = math.floor(point.Y / 4.5 + 0.5)
+
+            -- Set posisi
             Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             task.wait(getgenv().AutoClear_StepDelay)
+
+            -- Tunggu karakter beneran sampai di step ini (max 0.5 detik)
+            local waitCount = 0
+            while not isAtPosition(px, py) and waitCount < 10 do
+                task.wait(0.05)
+                waitCount = waitCount + 1
+            end
         end
     end
 
-    -- Break tile (gx, gy) sampai kosong
+    -- Cek apakah karakter sudah beneran di posisi grid (gx, gy)
+    local function isAtPosition(gx, gy)
+        local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if not char then return false end
+        local cx = math.floor(char.Position.X / 4.5 + 0.5)
+        local cy = math.floor(char.Position.Y / 4.5 + 0.5)
+        return cx == gx and cy == gy
+    end
+
+    -- Break tile (gx, gy) — hanya mukul kalau karakter sudah di (gx, gy+1)
     local function breakTile(gx, gy)
         if isLockArea(gx, gy) then return end
         local pos     = Vector2.new(gx, gy)
         local maxHits = 30
         local hits    = 0
+        local stuckWait = 0
+
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
             local hasBlock, hasBg = getTileLayers(gx, gy)
             if not hasBlock and not hasBg then break end
             if hits >= maxHits then break end
-            PlayerFist:FireServer(pos)
-            hits = hits + 1
-            task.wait(getgenv().AutoClear_BreakDelay)
+
+            -- Cek posisi karakter dulu sebelum mukul
+            if isAtPosition(gx, gy + 1) then
+                PlayerFist:FireServer(pos)
+                hits = hits + 1
+                stuckWait = 0
+                task.wait(getgenv().AutoClear_BreakDelay)
+            else
+                -- Karakter belum di posisi / dibalikin server — tunggu dulu
+                stuckWait = stuckWait + 1
+                if stuckWait > 20 then
+                    -- Sudah terlalu lama tidak bisa posisi, skip tile ini
+                    break
+                end
+                task.wait(0.1)
+            end
         end
     end
 
