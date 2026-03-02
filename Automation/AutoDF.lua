@@ -114,7 +114,7 @@ return function(SubTab, Window, myToken)
         return path
     end
 
-    -- Jalan ke (gx, gy) pakai SmartPath
+    -- Jalan ke (gx, gy) pakai SmartPath tapi gerak pakai moveTo simpel
     local function walkTo(gx, gy, StatusLabel, label)
         local Hitbox = getHitbox()
         if not Hitbox then return end
@@ -124,10 +124,7 @@ return function(SubTab, Window, myToken)
 
         local path = findSmartPath(sx, sy, gx, gy)
         if not path then
-            local wx, wy = worldPos(gx, gy)
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            moveTo(gx, gy)
             task.wait(0.2)
             return
         end
@@ -137,19 +134,14 @@ return function(SubTab, Window, myToken)
             if StatusLabel then
                 StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #path))
             end
-            local wx = math.floor(point.X / GRID_SIZE + 0.5) * GRID_SIZE
-            local wy = math.floor(point.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            local px = math.floor(point.X / GRID_SIZE + 0.5)
+            local py = math.floor(point.Y / GRID_SIZE + 0.5)
+            moveTo(px, py)
             task.wait(getgenv().DirtFarm_StepDelay)
         end
 
         if not isAtPosition(gx, gy) then
-            local wx, wy = worldPos(gx, gy)
-            Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(wx, wy) end)
+            moveTo(gx, gy)
             task.wait(0.15)
         end
     end
