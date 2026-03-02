@@ -320,8 +320,18 @@ return function(SubTab, Window, myToken)
             task.wait()
             if getgenv().AutoClear_Enabled then
                 pcall(function()
+                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     if movementModule.VelocityY < 0 then movementModule.VelocityY = 0 end
                     movementModule.Grounded = true
+                    -- Lock posisi Y supaya tidak turun saat break
+                    if Hitbox then
+                        local snappedX = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5) * GRID_SIZE
+                        local snappedY = math.floor(Hitbox.Position.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
+                        if math.abs(Hitbox.Position.Y - snappedY) > 0.1 then
+                            Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
+                            movementModule.Position = Hitbox.Position
+                        end
+                    end
                 end)
             end
         end
