@@ -183,22 +183,11 @@ return function(SubTab, Window, myToken)
                 StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
             end
 
-            local px = math.floor(point.X / 4.5 + 0.5)
-            local py = math.floor(point.Y / 4.5 + 0.5)
-
             -- Set posisi
             Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             pcall(function() MovPacket:FireServer(point.X, point.Y) end)
             task.wait(getgenv().AutoClear_StepDelay)
-
-            -- Tunggu karakter beneran sampai di step ini (max 0.5 detik)
-            local waitCount = 0
-            while not isAtPosition(px, py) and waitCount < 10 do
-                pcall(function() MovPacket:FireServer(point.X, point.Y) end)
-                task.wait(0.05)
-                waitCount = waitCount + 1
-            end
         end
     end
 
