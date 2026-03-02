@@ -58,11 +58,45 @@ return function(SubTab, Window, myToken)
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
 
+    -- ========================================
+    -- [2B] SKIP / LOCK CHECKS (dari Auto Clear)
+    -- ========================================
+
+    local function shouldSkip(itemName)
+        if not itemName then return false end
+        local n = string.lower(tostring(itemName))
+        if string.find(n, "lock") then return true end
+        if string.find(n, "door") then return true end
+        if n == "bedrock"         then return true end
+        return false
+    end
+
+    local function isLockArea(gx, gy)
+        local tile = worldData[gx] and worldData[gx][gy]
+        if not tile then return false end
+        for _, layerData in pairs(tile) do
+            if type(layerData) == "table" then
+                for k, v in pairs(layerData) do
+                    if tostring(v) == "lock_area" then return true end
+                    if tostring(k) == "lock_area" then return true end
+                end
+            elseif type(layerData) == "string" then
+                if string.lower(layerData) == "lock_area" then return true end
+            end
+        end
+        return false
+    end
+
+    -- ========================================
+    -- [3] PATHFINDING
+    -- ========================================
+
     -- Pathfinding
     local function isWalkable(gx, gy)
         if gx < WORLD_MIN_X or gx > WORLD_MAX_X or gy < WORLD_MIN_Y or gy > 60 then
             return false
         end
+        if isLockArea(gx, gy) then return false end
         if worldData[gx] and worldData[gx][gy] and worldData[gx][gy][1] ~= nil then
             local l1 = worldData[gx][gy][1]
             local n = string.lower(tostring((type(l1) == "table") and l1[1] or l1))
@@ -151,20 +185,11 @@ return function(SubTab, Window, myToken)
         return not tile or (tile[1] == nil and tile[2] == nil)
     end
 
-    local function shouldSkip(itemName)
-        if not itemName then return false end
-        local n = string.lower(tostring(itemName))
-        if string.find(n, "lock")    then return true end
-        if string.find(n, "door")    then return true end
-        if n == "bedrock"            then return true end
-        return false
-    end
-
     local function getTileLayer1(gx, gy)
         local tile = worldData[gx] and worldData[gx][gy]
         if not tile or tile[1] == nil then return nil end
         local itemName = (type(tile[1]) == "table") and tile[1][1] or tile[1]
-        if shouldSkip(itemName) then return nil end
+        if shouldSkip(itemName) then return nil end   -- skip lock/door/bedrock
         return itemName
     end
 
@@ -172,18 +197,23 @@ return function(SubTab, Window, myToken)
         local tile = worldData[gx] and worldData[gx][gy]
         if not tile or tile[2] == nil then return nil end
         local itemName = (type(tile[2]) == "table") and tile[2][1] or tile[2]
-        if shouldSkip(itemName) then return nil end
+        if shouldSkip(itemName) then return nil end   -- skip lock/door/bedrock
         return itemName
     end
 
     -- Break tile (gx, gy) sampai kosong, player harus di (gx, gy+1)
+    -- SEKARANG: skip kalau isLockArea atau shouldSkip
     local function breakTile(gx, gy, playerX)
+        -- Guard: jangan break kalau lock area atau tile mengandung item terlarang
+        if isLockArea(gx, gy) then return end
+
         playerX = playerX or gx
         local pos = Vector2.new(gx, gy)
 
         -- Layer 1
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
             if not getTileLayer1(gx, gy) then break end
+            if isLockArea(gx, gy) then break end  -- re-check tiap iterasi
             if isAtPosition(playerX, gy + 1) then
                 pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
                 PlayerFist:FireServer(pos)
@@ -197,6 +227,7 @@ return function(SubTab, Window, myToken)
         -- Layer 2 (background)
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
             if not getTileLayer2(gx, gy) then break end
+            if isLockArea(gx, gy) then break end  -- re-check tiap iterasi
             if isAtPosition(playerX, gy + 1) then
                 pcall(function() MovPacket:FireServer(worldPos(playerX, gy + 1)) end)
                 PlayerFist:FireServer(pos)
@@ -249,10 +280,13 @@ return function(SubTab, Window, myToken)
 
     -- Break sapling di tile yang sama dengan player (gx, gy)
     local function harvestTile(gx, gy)
+        if isLockArea(gx, gy) then return end  -- guard
         local pos = Vector2.new(gx, gy)
         while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
             local tile = worldData[gx] and worldData[gx][gy]
             if not tile or tile[1] == nil then break end
+            local itemName = (type(tile[1]) == "table") and tile[1][1] or tile[1]
+            if shouldSkip(itemName) then break end  -- guard
             if isAtPosition(gx, gy) then
                 pcall(function() MovPacket:FireServer(worldPos(gx, gy)) end)
                 PlayerFist:FireServer(pos)
@@ -313,11 +347,13 @@ return function(SubTab, Window, myToken)
             local plantX = goLeft and (currentX - i + 1) or (currentX + i - 1)
             plantX = math.clamp(plantX, WORLD_MIN_X + 2, WORLD_MAX_X - 2)
 
-            walkTo(plantX, currentY, StatusLabel, "Ke titik tanam")
-            -- Plant di tile yang sama dengan posisi player
-            PlayerPlace:FireServer(Vector2.new(plantX, currentY), slotIdx, 1)
-            table.insert(plantedPositions, {x = plantX, y = currentY})
-            task.wait(0.15)
+            -- Skip kalau tile target adalah lock area
+            if not isLockArea(plantX, currentY) then
+                walkTo(plantX, currentY, StatusLabel, "Ke titik tanam")
+                PlayerPlace:FireServer(Vector2.new(plantX, currentY), slotIdx, 1)
+                table.insert(plantedPositions, {x = plantX, y = currentY})
+                task.wait(0.15)
+            end
         end
 
         -- Tunggu 30 detik
@@ -331,8 +367,11 @@ return function(SubTab, Window, myToken)
         StatusLabel:SetText("Status: Memanen...")
         for _, plantPos in ipairs(plantedPositions) do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-            walkTo(plantPos.x, plantPos.y, StatusLabel, "Panen")
-            harvestTile(plantPos.x, plantPos.y)
+            -- Guard: skip panen kalau tile terkunci
+            if not isLockArea(plantPos.x, plantPos.y) then
+                walkTo(plantPos.x, plantPos.y, StatusLabel, "Panen")
+                harvestTile(plantPos.x, plantPos.y)
+            end
         end
 
         -- Collect drop yang ketinggalan di area panen
@@ -350,7 +389,7 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [3] GRAVITY BYPASS
+    -- [4] GRAVITY BYPASS
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -365,7 +404,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [4] UI
+    -- [5] UI
     -- ========================================
     SubTab:AddSection("DIRT FARM")
     getgenv().SayzUI_Handles["DirtFarm_Master"] = SubTab:AddToggle("Enable Dirt Farm", getgenv().DirtFarm_Enabled, function(t)
@@ -389,9 +428,10 @@ return function(SubTab, Window, myToken)
     SubTab:AddLabel("Fase 3: Break zigzag X=2-98, break 2 tile di bawah player")
     SubTab:AddLabel("Fase 4: Naik, place dirt 1 tile di atas kepala")
     SubTab:AddLabel("        Kalau dirt habis: tanam 10 sapling, tunggu 30s, panen")
+    SubTab:AddLabel("Skip: bedrock, lock, door, lock_area otomatis!")
 
     -- ========================================
-    -- [5] MAIN LOOP
+    -- [6] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -415,12 +455,13 @@ return function(SubTab, Window, myToken)
                     PhaseLabel:SetText("Fase: 1 - Break Kiri")
                     for gy = 60, WORLD_MIN_Y, -1 do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                        local hasAny = not isTileEmpty(0, gy) or not isTileEmpty(1, gy)
+                        local hasAny = (not isTileEmpty(0, gy) and not isLockArea(0, gy))
+                                    or (not isTileEmpty(1, gy) and not isLockArea(1, gy))
                         if hasAny then
                             PosLabel:SetText(string.format("Posisi: (0-1, %d)", gy))
                             walkTo(0, gy + 1, StatusLabel, "Break kiri")
-                            if not isTileEmpty(0, gy) then breakTile(0, gy, 0) end
-                            if not isTileEmpty(1, gy) then breakTile(1, gy, 0) end
+                            if not isTileEmpty(0, gy) and not isLockArea(0, gy) then breakTile(0, gy, 0) end
+                            if not isTileEmpty(1, gy) and not isLockArea(1, gy) then breakTile(1, gy, 0) end
                         end
                     end
 
@@ -430,12 +471,13 @@ return function(SubTab, Window, myToken)
                     PhaseLabel:SetText("Fase: 2 - Break Kanan")
                     for gy = 60, WORLD_MIN_Y, -1 do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                        local hasAny = not isTileEmpty(99, gy) or not isTileEmpty(100, gy)
+                        local hasAny = (not isTileEmpty(99, gy) and not isLockArea(99, gy))
+                                    or (not isTileEmpty(100, gy) and not isLockArea(100, gy))
                         if hasAny then
                             PosLabel:SetText(string.format("Posisi: (99-100, %d)", gy))
                             walkTo(100, gy + 1, StatusLabel, "Break kanan")
-                            if not isTileEmpty(100, gy) then breakTile(100, gy, 100) end
-                            if not isTileEmpty(99, gy) then breakTile(99, gy, 100) end
+                            if not isTileEmpty(100, gy) and not isLockArea(100, gy) then breakTile(100, gy, 100) end
+                            if not isTileEmpty(99, gy) and not isLockArea(99, gy) then breakTile(99, gy, 100) end
                         end
                     end
 
@@ -453,8 +495,8 @@ return function(SubTab, Window, myToken)
 
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            -- Scan dulu, kalau kosong skip
-                            if not isTileEmpty(gx, gy) then
+                            -- Skip lock area dan tile kosong
+                            if not isTileEmpty(gx, gy) and not isLockArea(gx, gy) then
                                 PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, gy))
                                 walkTo(gx, gy + 1, StatusLabel, "Zigzag break")
                                 breakTile(gx, gy)
@@ -470,7 +512,7 @@ return function(SubTab, Window, myToken)
 
                     -- Naik ke posisi paling bawah dulu
                     walkTo(2, WORLD_MIN_Y + 2, StatusLabel, "Ke start place")
-                    cx, cy = getGridPos()
+                    local cx, cy = getGridPos()
                     goingRight = true
 
                     while cy <= startY and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
@@ -481,18 +523,23 @@ return function(SubTab, Window, myToken)
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
-                            walkTo(gx, cy, StatusLabel, "Place dirt")
-                            PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
+                            -- Skip place kalau tile target lock area
+                            if isLockArea(gx, cy + 1) then
+                                -- lewati, jangan place
+                            else
+                                walkTo(gx, cy, StatusLabel, "Place dirt")
+                                PosLabel:SetText(string.format("Posisi: (%d, %d)", gx, cy))
 
-                            -- Place dirt 1 tile di atas kepala
-                            local placed = placeDirt(gx, cy + 1)
-                            if not placed then
-                                -- Dirt habis, tanam sapling dulu
-                                plantAndHarvest(gx, cy, StatusLabel)
-                                -- Coba place lagi setelah panen
-                                placeDirt(gx, cy + 1)
+                                -- Place dirt 1 tile di atas kepala
+                                local placed = placeDirt(gx, cy + 1)
+                                if not placed then
+                                    -- Dirt habis, tanam sapling dulu
+                                    plantAndHarvest(gx, cy, StatusLabel)
+                                    -- Coba place lagi setelah panen
+                                    placeDirt(gx, cy + 1)
+                                end
+                                task.wait(0.1)
                             end
-                            task.wait(0.1)
                         end
 
                         -- Naik 2
