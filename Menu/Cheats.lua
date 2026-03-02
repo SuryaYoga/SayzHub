@@ -111,56 +111,75 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [5] ANTI DAMAGE
-    -- Hook PlayerHurtMe:FireServer() dan cancel kalau aktif
+    -- [5] ANTI DAMAGE + ANTI HIT
+    -- Hook PlayerHurtMe → cancel damage + freeze posisi sementara
+    -- Hook PlayerMovementPackets → block saat freeze aktif
     -- ========================================
     SubTab:AddSection("PROTECTION")
 
     Cheat.AntiDamage = Cheat.AntiDamage or false
+    Cheat.AntiHit    = Cheat.AntiHit or false
+    local freezePos  = false  -- true saat sedang freeze posisi
 
     getgenv().SayzUI_Handles["Cheat_AntiDamage"] = SubTab:AddToggle("Anti Damage", Cheat.AntiDamage, function(t)
         Cheat.AntiDamage = t
         Window:Notify(t and "Anti Damage ON" or "Anti Damage OFF", 2, t and "ok" or "danger")
     end)
 
-    if not _G.AntiDamageHookSet then
-        local PlayerHurtMe = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerHurtMe")
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-            if method == "FireServer" and self == PlayerHurtMe then
-                if _G.LatestRunToken == myToken and Cheat.AntiDamage then
-                    return -- cancel remote, damage tidak dikirim
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-        _G.AntiDamageHookSet = true
-    end
-
-    -- ========================================
-    -- [6] ANTI HIT (anti terdorong)
-    -- Zero-kan velocity HumanoidRootPart setiap frame
-    -- ========================================
-    Cheat.AntiHit = Cheat.AntiHit or false
-
     getgenv().SayzUI_Handles["Cheat_AntiHit"] = SubTab:AddToggle("Anti Hit", Cheat.AntiHit, function(t)
         Cheat.AntiHit = t
         Window:Notify(t and "Anti Hit ON" or "Anti Hit OFF", 2, t and "ok" or "danger")
     end)
 
+    if not _G.AntiDamageHookSet then
+        local Remotes         = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+        local PlayerHurtMe    = Remotes:WaitForChild("PlayerHurtMe")
+        local MovementPackets = Remotes:WaitForChild("PlayerMovementPackets")
+
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            if _G.LatestRunToken ~= myToken then return oldNamecall(self, ...) end
+            local method = getnamecallmethod()
+
+            if method == "FireServer" then
+                -- Cancel damage
+                if self == PlayerHurtMe and Cheat.AntiDamage then
+                    -- Freeze posisi sebentar supaya tidak mental
+                    if not freezePos then
+                        freezePos = true
+                        task.delay(0.6, function() freezePos = false end)
+                    end
+                    return
+                end
+
+                -- Block movement packet saat freeze (anti mental)
+                if self == MovementPackets and (Cheat.AntiDamage or Cheat.AntiHit) and freezePos then
+                    return
+                end
+            end
+
+            return oldNamecall(self, ...)
+        end)
+        _G.AntiDamageHookSet = true
+    end
+
+    -- Anti Hit: freeze posisi saat ada velocity spike dari luar
     task.spawn(function()
         while _G.LatestRunToken == myToken do
             task.wait()
             if Cheat.AntiHit then
                 pcall(function()
-                    local char = game.Players.LocalPlayer.Character
-                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local char = LP.Character
+                    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
                     if hrp then
-                        -- Cancel dorongan horizontal saja (biarkan Y supaya tidak glitch)
                         local vel = hrp.AssemblyLinearVelocity
-                        if math.abs(vel.X) > 1 then
+                        -- Kalau ada dorongan horizontal tiba-tiba, freeze posisi
+                        if math.abs(vel.X) > 5 then
                             hrp.AssemblyLinearVelocity = Vector3.new(0, vel.Y, vel.Z)
+                            if not freezePos then
+                                freezePos = true
+                                task.delay(0.6, function() freezePos = false end)
+                            end
                         end
                     end
                 end)
