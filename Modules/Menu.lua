@@ -1,6 +1,7 @@
 return function(Window)
     local MenuTab = Window:AddMainTab("Menu")
     local CheatsSub = MenuTab:AddSubTab("Cheats")
+    local VisualSub = MenuTab:AddSubTab("Visual")
 
     local myToken = _G.LatestRunToken
 
@@ -44,4 +45,5 @@ return function(Window)
     end
 
     LoadFitur("Cheats.lua", CheatsSub)
+    LoadFitur("Visual.lua", VisualSub)
 end
