@@ -13,7 +13,7 @@ return function(SubTab, Window, myToken)
 
     getgenv().AutoClear_Enabled    = getgenv().AutoClear_Enabled    or false
     getgenv().AutoClear_BreakDelay = getgenv().AutoClear_BreakDelay or 0.035
-    getgenv().AutoClear_StepDelay  = getgenv().AutoClear_StepDelay  or 0.05
+    getgenv().AutoClear_StepDelay  = getgenv().AutoClear_StepDelay  or 0.12
 
     local WORLD_MIN_X = 0
     local WORLD_MAX_X = 100
@@ -206,28 +206,26 @@ return function(SubTab, Window, myToken)
         return cx == gx and cy == gy
     end
 
-    -- Break tile (gx, gy) — hanya mukul kalau karakter sudah di (gx, gy+1)
+    -- Break tile (gx, gy) sampai worldData beneran kosong
     local function breakTile(gx, gy)
         if isLockArea(gx, gy) then return end
-        local pos     = Vector2.new(gx, gy)
-        local maxHits = 30
-        local hits    = 0
-        local stuckWait = 0
+        local pos = Vector2.new(gx, gy)
 
+        -- Break layer 1 (foreground block) dulu sampai beneran nil
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
-            local hasBlock, hasBg = getTileLayers(gx, gy)
-            if not hasBlock and not hasBg then break end
-            if hits >= maxHits then break end
+            local tile = worldData[gx] and worldData[gx][gy]
+            local layer1 = tile and tile[1]
+            if not layer1 then break end
+            -- Cek skip
+            local itemName = (type(layer1) == "table") and layer1[1] or layer1
+            if shouldSkip(itemName) then break end
 
-            -- Cek posisi karakter dulu sebelum mukul
             if isAtPosition(gx, gy + 1) then
                 pcall(function() MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5) end)
                 PlayerFist:FireServer(pos)
-                hits = hits + 1
-                stuckWait = 0
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
-                -- Karakter belum di posisi / dibalikin server — sync ulang dan tunggu
+                -- Dibalikin server, sync ulang
                 pcall(function()
                     local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                     if Hitbox then
@@ -236,8 +234,31 @@ return function(SubTab, Window, myToken)
                         MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5)
                     end
                 end)
-                stuckWait = stuckWait + 1
-                if stuckWait > 20 then break end
+                task.wait(0.1)
+            end
+        end
+
+        -- Break layer 2 (background) sampai beneran nil
+        while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
+            local tile = worldData[gx] and worldData[gx][gy]
+            local layer2 = tile and tile[2]
+            if not layer2 then break end
+            local itemName = (type(layer2) == "table") and layer2[1] or layer2
+            if shouldSkip(itemName) then break end
+
+            if isAtPosition(gx, gy + 1) then
+                pcall(function() MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5) end)
+                PlayerFist:FireServer(pos)
+                task.wait(getgenv().AutoClear_BreakDelay)
+            else
+                pcall(function()
+                    local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+                    if Hitbox then
+                        Hitbox.CFrame = CFrame.new(gx * 4.5, (gy + 1) * 4.5, Hitbox.Position.Z)
+                        movementModule.Position = Hitbox.Position
+                        MovPacket:FireServer(gx * 4.5, (gy + 1) * 4.5)
+                    end
+                end)
                 task.wait(0.1)
             end
         end
