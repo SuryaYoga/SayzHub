@@ -489,19 +489,15 @@ return function(SubTab, Window, myToken)
                     -- ============================
                     PhaseLabel:SetText("Fase: 3 - Break Zigzag")
 
-                    -- Pastikan playerRow genap
+                    -- playerRow = startY + 1 (1 di atas top block)
+                    -- breakRow  = playerRow - 2 = startY - 1 (top block tidak pernah kena)
                     local playerRow = startY + 1
-                    if playerRow % 2 ~= 0 then playerRow = playerRow + 1 end
-
-                    -- breakRow = playerRow - 2, juga pasti genap
-                    -- Loop turun: playerRow turun 2 tiap row, sampai breakRow >= WORLD_MIN_Y
                     local goingRight = true
 
-                    -- Mulai dari x=2, playerRow
                     walkTo(2, playerRow, StatusLabel, "Ke start zigzag")
 
                     local currentPlayerRow = playerRow
-                    while currentPlayerRow - 2 >= WORLD_MIN_Y do
+                    while currentPlayerRow - 2 >= WORLD_MIN_Y and (currentPlayerRow - 2) < startY do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
                         local breakRow = currentPlayerRow - 2
