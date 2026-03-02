@@ -1,23 +1,27 @@
-return function(SubTab, Window, myToken)
+return function(SubTab, Window)
+    -- ========================================
+    -- [0] MEMORY CLEANER (Satu-satunya tempat setting awal)
+    -- ========================================
+    getgenv().AutoCollect = false
+    getgenv().TakeGems = true
+    getgenv().StepDelay = 0.05
+    getgenv().ItemBlacklist = {}
+    getgenv().AvoidanceStrength = 50
+
+    -- Reset variabel internal lokal
+    local lockedDoors = {}
+    local badItems = {}
+    local currentPool = {}
+    local doorDatabase = {}
+
     -- [[ 1. SETUP & VARIABLES ]] --
+    local myToken = _G.LatestRunToken -- Token untuk Kill Switch
     local LP = game:GetService("Players").LocalPlayer
     local WorldTiles = require(game.ReplicatedStorage.WorldTiles)
     local movementModule = require(LP.PlayerScripts.PlayerMovement)
     local IM = require(game:GetService("ReplicatedStorage").Managers.ItemsManager)
 
-    -- Pengaturan Global
-    getgenv().AutoCollect = getgenv().AutoCollect or false
-    getgenv().TakeGems = getgenv().TakeGems or true 
-    getgenv().StepDelay = getgenv().StepDelay or 0.05 
-    getgenv().ItemBlacklist = getgenv().ItemBlacklist or {} 
-    -- Ini fitur Radius (Default 50) - Algoritma asli tetap menggunakan ini
-    getgenv().AvoidanceStrength = getgenv().AvoidanceStrength or 50 
-
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
-    local doorDatabase = {} 
-    local lockedDoors = {} 
-    local badItems = {} 
-    local currentPool = {} 
 
     -- [[ 2. CORE FUNCTIONS ]] --
 
@@ -58,12 +62,10 @@ return function(SubTab, Window, myToken)
     end
 
     local function isWalkable(gx, gy)
-        -- Cek Batas Map
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then 
             return false, false 
         end
         
-        -- Cek Pintu yang pernah bikin stuck
         if lockedDoors[gx .. "," .. gy] then 
             return false, false 
         end 
@@ -75,7 +77,6 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                -- Pintu dan Frame dianggap bisa dilewati
                 if string.find(n, "door") or string.find(n, "frame") then 
                     return true, hasBlacklist
                 end
@@ -111,7 +112,6 @@ return function(SubTab, Window, myToken)
                 local walkable, isBlacklisted = isWalkable(nx, ny)
 
                 if walkable then
-                    -- LOGIKA RADIUS/BEBAN (Original):
                     local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
                     local newTotalCost = current.cost + moveCost
 
@@ -161,24 +161,22 @@ return function(SubTab, Window, myToken)
     -- [[ 3. UI ELEMENTS ]] --
 
     SubTab:AddSection("Auto Collect Master")
-    
-    getgenv().SayzUI_Handles["AutoCollectEnabled"] = SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
+    SubTab:AddToggle("Enable Auto Collect", getgenv().AutoCollect, function(state)
         getgenv().AutoCollect = state
         if state then InitDoorDatabase() end
     end)
 
-    getgenv().SayzUI_Handles["TakeGemsToggle"] = SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
+    SubTab:AddToggle("Collect Gems", getgenv().TakeGems, function(state)
         getgenv().TakeGems = state
     end)
 
     SubTab:AddSection("Path & Speed Settings")
     
-    -- slider v3.1 support decimal (parameter 2 untuk presisi desimal)
-    getgenv().SayzUI_Handles["StepDelaySlider"] = SubTab:AddSlider("Movement Speed", 0.01, 0.2, getgenv().StepDelay, function(val)
+    SubTab:AddSlider("Movement Speed", 0.01, 0.2, 0.05, function(val)
         getgenv().StepDelay = val
-    end, 2)
+    end)
 
-    getgenv().SayzUI_Handles["AvoidanceInput"] = SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
+    SubTab:AddInput("Avoidance Radius (Cost)", tostring(getgenv().AvoidanceStrength), function(v)
         local val = tonumber(v)
         if val then
             getgenv().AvoidanceStrength = val
@@ -196,7 +194,6 @@ return function(SubTab, Window, myToken)
         for k, _ in pairs(selected) do table.insert(list, k) end
         FilterLabel:SetText(#list > 0 and "Active Blacklist: " .. table.concat(list, ", ") or "Active Blacklist: None")
     end)
-    getgenv().SayzUI_Handles["ItemFilterDropdown"] = MultiDrop
 
     SubTab:AddButton("Scan World Items", function()
         local found = {}
@@ -214,15 +211,24 @@ return function(SubTab, Window, myToken)
         Window:Notify("Found " .. #found .. " item types.", 2)
     end)
 
+    -- Tombol Reset Utama
     SubTab:AddButton("Reset All Filters", function()
         getgenv().ItemBlacklist = {}
         badItems = {}
-        lockedDoors = {}
         FilterLabel:SetText("Active Blacklist: None")
+        
+        -- Memanggil fungsi :Set([]) yang baru kita buat di library
         if MultiDrop and MultiDrop.Set then 
             MultiDrop:Set({}) 
         end
-        Window:Notify("All settings cleared!", 2)
+        
+        Window:Notify("Filters & UI Reset!", 2)
+    end)
+    
+    -- Tombol Reset Door Terpisah
+    SubTab:AddButton("Reset Stuck Doors", function()
+        lockedDoors = {} -- Membersihkan list pintu yang bikin stuck
+        Window:Notify("Stuck Doors Cleared!", 2)
     end)
 
     SubTab:AddSection("Status Dashboard")
@@ -261,7 +267,8 @@ return function(SubTab, Window, myToken)
                         local path = findSmartPath(sx, sy, tx, ty)
                         if path then
                             for i, point in ipairs(path) do
-                                if not getgenv().AutoCollect or _G.LatestRunToken ~= myToken then break end
+                                -- CEK TOKEN & TOGGLE DI DALAM PATH
+                                if _G.LatestRunToken ~= myToken or not getgenv().AutoCollect then break end
                                 
                                 StatusLabel:SetText("Status: Walking (" .. i .. "/" .. #path .. ")")
                                 Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
@@ -292,5 +299,6 @@ return function(SubTab, Window, myToken)
             end)
             task.wait(0.2)
         end
+        print("Auto Collect: Loop Terminated.")
     end)
 end
