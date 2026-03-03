@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v4 - 03 Mar 2026\n- Fix inventory path (dirt tidak lagi dianggap kosong)\n- Fix fase 3 tidak bolak-balik (cek block dulu sebelum scan row)\n- Fix kondisi break loop fase 3\n- Fix cek tile kosong sebelum place dirt")
+    SubTab:AddParagraph("Versi", "v5 - 03 Mar 2026\n- Fix fase 3: scan semua tile breakable dulu, langsung walkTo ke (gx, gy+2) tanpa jalan row per row\n- Fase 3 tidak scan ulang tiap tile, hanya scan ulang kalau list habis\n- Fix inventory path")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -548,60 +548,67 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ============================
-                    -- FASE 3: Break zigzag
-                    -- player di startY+1, break di playerRow-2
-                    -- turun 2-2 pakai smartpath
+                    -- FASE 3: Break langsung ke target
+                    -- Scan semua tile breakable sekali,
+                    -- langsung walkTo player ke (gx, gy+2) tanpa jalan row per row
+                    -- Kalau list habis → scan ulang sekali, kalau tetap kosong → fase 4
                     -- ============================
                     PhaseLabel:SetText("Fase: 3 - Break Zigzag")
 
-                    local playerRow  = startY + 1
-                    local goingRight = true
-
-                    walkTo(2, playerRow, StatusLabel, "Ke start zigzag")
-
-                    local currentPlayerRow = playerRow
-                    while currentPlayerRow - 2 >= WORLD_MIN_Y do
-                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-
-                        local breakRow = currentPlayerRow - 2
-
-                        -- Cek dulu apakah masih ada block yang bisa di-break di breakRow ini
-                        local hasBlockInRow = false
-                        for gx = 2, 98 do
-                            if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
-                                if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
-                                    hasBlockInRow = true
-                                    break
-                                end
-                            end
-                        end
-
-                        if hasBlockInRow then
-                            local xStart = goingRight and 2 or 98
-                            local xEnd   = goingRight and 98 or 2
-                            local xStep  = goingRight and 1 or -1
-
-                            for gx = xStart, xEnd, xStep do
-                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                    local function collectBreakTargets()
+                        local targets = {}
+                        for breakRow = startY - 1, WORLD_MIN_Y, -1 do
+                            for gx = 2, 98 do
                                 if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
                                     if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
-                                        if not isAtPosition(gx, currentPlayerRow) then
-                                            walkTo(gx, currentPlayerRow, StatusLabel, "Zigzag")
-                                        end
-                                        PosLabel:SetText(string.format("Player:(%d,%d) Break:(%d,%d)", gx, currentPlayerRow, gx, breakRow))
-                                        breakTile(gx, breakRow, gx)
+                                        table.insert(targets, {gx = gx, gy = breakRow})
                                     end
                                 end
                             end
                         end
+                        return targets
+                    end
 
-                        -- Turun ke row berikutnya
-                        local nextRow = currentPlayerRow - 2
-                        if nextRow < WORLD_MIN_Y then break end
-                        local nextX = goingRight and 98 or 2
-                        walkTo(nextX, nextRow, StatusLabel, "Turun row")
-                        currentPlayerRow = nextRow
-                        goingRight = not goingRight
+                    -- Scan awal
+                    local breakTargets = collectBreakTargets()
+
+                    if #breakTargets == 0 then
+                        StatusLabel:SetText("Status: Fase 3 - Tidak ada block, lanjut...")
+                    else
+                        local idx = 1
+                        while true do
+                            if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+
+                            -- Ambil target berikutnya dari list
+                            local target = breakTargets[idx]
+
+                            -- Kalau list sudah habis, scan ulang sekali
+                            if not target then
+                                breakTargets = collectBreakTargets()
+                                if #breakTargets == 0 then break end  -- benar-benar habis → fase 4
+                                idx = 1
+                                target = breakTargets[idx]
+                            end
+
+                            -- Cek tile ini masih perlu di-break (mungkin sudah kosong karena efek sebelumnya)
+                            if isTileEmpty(target.gx, target.gy) or not canAccess(target.gx, target.gy)
+                            or (not getTileLayer1(target.gx, target.gy) and not getTileLayer2(target.gx, target.gy)) then
+                                idx = idx + 1
+                                continue
+                            end
+
+                            -- Langsung walkTo ke posisi player (target.gy + 2) tanpa jalan row per row
+                            local playerRow = target.gy + 2
+                            if not isAtPosition(target.gx, playerRow) then
+                                walkTo(target.gx, playerRow, StatusLabel, "Ke target break")
+                            end
+
+                            PosLabel:SetText(string.format("Player:(%d,%d) Break:(%d,%d)", target.gx, playerRow, target.gx, target.gy))
+                            breakTile(target.gx, target.gy, target.gx)
+
+                            -- Tile sudah di-break, lanjut ke target berikutnya
+                            idx = idx + 1
+                        end
                     end
 
                     -- ============================
