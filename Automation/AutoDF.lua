@@ -163,20 +163,22 @@ return function(SubTab, Window, myToken)
 
     local function findSmartPath(startX, startY, targetX, targetY)
         local startKey = startX .. "," .. startY
-        local queue    = {{x=startX, y=startY, cost=0, parent=nil}}
-        local visited  = {[startKey] = 0}
-        local dirs     = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
-        local found    = nil
-        local limit    = 0
+        -- A* dengan heuristic Manhattan distance
+        local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), parent=nil}}
+        local visited = {[startKey] = 0}
+        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local found   = nil
+        local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limit = limit + 1
-            if limit > 4000 then break end
-            local minIdx, minCost = 1, queue[1].cost
+            if limit > 10000 then break end
+            local minIdx, minF = 1, queue[1].f
             for i = 2, #queue do
-                if queue[i].cost < minCost then
-                    minCost = queue[i].cost
-                    minIdx  = i
+                if queue[i].f < minF then
+                    minF   = queue[i].f
+                    minIdx = i
                 end
             end
             local cur = table.remove(queue, minIdx)
@@ -185,10 +187,10 @@ return function(SubTab, Window, myToken)
                 local nx, ny = cur.x + d.x, cur.y + d.y
                 local nkey   = nx .. "," .. ny
                 if isWalkable(nx, ny) then
-                    local nc = cur.cost + 1
-                    if not visited[nkey] or nc < visited[nkey] then
-                        visited[nkey] = nc
-                        table.insert(queue, {x=nx, y=ny, cost=nc, parent=cur})
+                    local ng = cur.g + 1
+                    if not visited[nkey] or ng < visited[nkey] then
+                        visited[nkey] = ng
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), parent=cur})
                     end
                 end
             end
@@ -472,7 +474,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v30 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v31 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
