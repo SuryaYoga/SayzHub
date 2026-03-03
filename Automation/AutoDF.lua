@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v7 - 03 Mar 2026\n- Fix fase 4: player mulai di startY+1, place di startY+2, naik 2-2 ke atas\n- Fix fase 3: scan hanya row parity benar (startY-1, startY-3, ...)\n- Fix error nil+number")
+    SubTab:AddParagraph("Versi", "v10 - 03 Mar 2026\n- Fix arah scan & parity benar: startY = bedrock atas, scan turun ke bawah\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -492,26 +492,27 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE 0: Clear block di atas door
+                    -- Parity: X=2-98 hanya break row (startY-1)%2, X=0,1,99,100 break semua
                     -- ============================
                     PhaseLabel:SetText("Fase: 0 - Clear Atas Door")
                     do
-                        local f0Right = true
+                        local breakParity = (startY - 1) % 2
                         for gy = 60, doorY + 1, -1 do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            local xStart = f0Right and WORLD_MIN_X or WORLD_MAX_X
-                            local xEnd   = f0Right and WORLD_MAX_X or WORLD_MIN_X
-                            local xStep  = f0Right and 1 or -1
-                            for gx = xStart, xEnd, xStep do
+                            for gx = WORLD_MIN_X, WORLD_MAX_X do
                                 if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                                 if not isTileEmpty(gx, gy) and canAccess(gx, gy) then
-                                    if getTileLayer1(gx, gy) or getTileLayer2(gx, gy) then
-                                        PosLabel:SetText(string.format("Posisi: (%d,%d)", gx, gy))
-                                        walkTo(gx, gy + 1, StatusLabel, "Clear atas")
-                                        breakTileFromAbove(gx, gy)
+                                    local isBorder = (gx <= 1 or gx >= 99)
+                                    local parityOk = (gy % 2) == breakParity
+                                    if isBorder or parityOk then
+                                        if getTileLayer1(gx, gy) or getTileLayer2(gx, gy) then
+                                            PosLabel:SetText(string.format("Posisi: (%d,%d)", gx, gy))
+                                            walkTo(gx, gy + 1, StatusLabel, "Clear atas")
+                                            breakTileFromAbove(gx, gy)
+                                        end
                                     end
                                 end
                             end
-                            f0Right = not f0Right
                         end
                     end
 
@@ -631,7 +632,7 @@ return function(SubTab, Window, myToken)
 
                     walkTo(2, cy, StatusLabel, "Ke start place")
 
-                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                    while cy + 1 <= 60 and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
                         local xStart = goingRight and 2 or 98
                         local xEnd   = goingRight and 98 or 2
                         local xStep  = goingRight and 1 or -1
@@ -660,9 +661,9 @@ return function(SubTab, Window, myToken)
                             end
                         end
 
-                        -- Naik 2 (placeY naik 2, cy naik 2)
-                        local nextCy = cy - 2
-                        if nextCy < WORLD_MIN_Y then break end
+                        -- Naik 2 ke atas (y bertambah = makin atas)
+                        local nextCy = cy + 2
+                        if nextCy + 1 > 60 then break end
                         local nextX = goingRight and 98 or 2
                         walkTo(nextX, nextCy, StatusLabel, "Naik place")
                         cy = nextCy
