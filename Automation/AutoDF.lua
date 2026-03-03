@@ -474,7 +474,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v31 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v32 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -591,18 +591,28 @@ return function(SubTab, Window, myToken)
                     local function collectBreakTargets()
                         if not startY then return {} end
                         local targets = {}
-                        -- Player selalu di startY+1, jangkauan break = 2 tile ke bawah
-                        -- Jadi breakRow dimulai dari startY-1 lalu turun 2-2 (parity sama)
-                        -- Contoh: startY=36 → breakRow = 35, 33, 31, 29, ...
+                        local rowIdx = 0
                         local breakRow = startY - 1
                         while breakRow >= WORLD_MIN_Y do
+                            local rowTiles = {}
                             for gx = 2, 98 do
                                 if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
                                     if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
-                                        table.insert(targets, {gx = gx, gy = breakRow})
+                                        table.insert(rowTiles, {gx = gx, gy = breakRow})
                                     end
                                 end
                             end
+                            -- Zigzag: row genap 2→98, row ganjil 98→2
+                            if rowIdx % 2 == 1 then
+                                for j = #rowTiles, 1, -1 do
+                                    table.insert(targets, rowTiles[j])
+                                end
+                            else
+                                for _, t in ipairs(rowTiles) do
+                                    table.insert(targets, t)
+                                end
+                            end
+                            rowIdx = rowIdx + 1
                             breakRow = breakRow - 2
                         end
                         return targets
