@@ -474,7 +474,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v35 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v37 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -773,63 +773,91 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE 5: Bersihkan magma/lava → replace dirt
+                    -- Cari magma terdekat (nearest first), lalu bersihin semua magma di row y yang sama
+                    -- Baru cari magma terdekat lagi di row y lain. Hindari bolak-balik naik turun.
                     -- ============================
                     PhaseLabel:SetText("Fase: 5 - Bersihkan Magma")
                     do
-                        local magmaFound = true
-                        while magmaFound and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                            magmaFound = false
-                            for gx = WORLD_MIN_X, WORLD_MAX_X do
-                                if worldData[gx] then
-                                    for gy = WORLD_MIN_Y, 60 do
-                                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                                        local tile = worldData[gx][gy]
-                                        if tile and tile[1] then
-                                            local n = string.lower(tostring((type(tile[1])=="table") and tile[1][1] or tile[1]))
-                                            if (string.find(n, "magma") or string.find(n, "lava")) and canAccess(gx, gy) then
-                                                magmaFound = true
-                                                PosLabel:SetText(string.format("Magma: (%d,%d)", gx, gy))
-                                                walkTo(gx, gy + 1, StatusLabel, "Ke magma")
-                                                local pos = Vector2.new(gx, gy)
-                                                while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
-                                                    local t2 = worldData[gx] and worldData[gx][gy]
-                                                    if not t2 or not t2[1] then break end
-                                                    local nn = string.lower(tostring((type(t2[1])=="table") and t2[1][1] or t2[1]))
-                                                    if not (string.find(nn, "magma") or string.find(nn, "lava")) then break end
-                                                    if isAtPosition(gx, gy + 1) then
-                                                        pcall(function() MovPacket:FireServer(worldPos(gx, gy + 1)) end)
-                                                        PlayerFist:FireServer(pos)
-                                                        task.wait(getgenv().DirtFarm_BreakDelay)
-                                                    else
-                                                        moveTo(gx, gy + 1)
-                                                        task.wait(0.1)
-                                                    end
-                                                end
-                                                -- Retry place dirt sampai benar-benar terpasang (max 5x)
-                                                -- Cek: tile bukan dirt = belum terpasang
-                                                local function isMagmaTileNotDirt()
-                                                    local t = worldData[gx] and worldData[gx][gy]
-                                                    if not t or not t[1] then return true end  -- kosong = belum ada dirt
-                                                    local nm = string.lower(tostring((type(t[1])=="table") and t[1][1] or t[1]))
-                                                    return nm ~= "dirt"
-                                                end
-                                                local magmaPlaceRetry = 0
-                                                while isMagmaTileNotDirt() and magmaPlaceRetry < 5 do
-                                                    if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                                                    local placed = placeItem(gx, gy, "dirt")
-                                                    if not placed then
-                                                        plantAndHarvest(gx, gy + 1, StatusLabel)
-                                                    end
-                                                    task.wait(0.1)
-                                                    magmaPlaceRetry = magmaPlaceRetry + 1
-                                                end
-                                            end
+                        local function isMagma(gx, gy)
+                            local t = worldData[gx] and worldData[gx][gy]
+                            if not t or not t[1] then return false end
+                            local n = string.lower(tostring((type(t[1])=="table") and t[1][1] or t[1]))
+                            return string.find(n, "magma") or string.find(n, "lava")
+                        end
+
+                        local function breakAndPlaceMagma(gx, gy)
+                            if not canAccess(gx, gy) then return end
+                            PosLabel:SetText(string.format("Magma: (%d,%d)", gx, gy))
+                            walkTo(gx, gy + 1, StatusLabel, "Ke magma")
+                            local pos = Vector2.new(gx, gy)
+                            while _G.LatestRunToken == myToken and getgenv().DirtFarm_Enabled do
+                                if not isMagma(gx, gy) then break end
+                                if isAtPosition(gx, gy + 1) then
+                                    pcall(function() MovPacket:FireServer(worldPos(gx, gy + 1)) end)
+                                    PlayerFist:FireServer(pos)
+                                    task.wait(getgenv().DirtFarm_BreakDelay)
+                                else
+                                    moveTo(gx, gy + 1)
+                                    task.wait(0.1)
+                                end
+                            end
+                            local retry = 0
+                            while retry < 5 do
+                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                local t = worldData[gx] and worldData[gx][gy]
+                                if t and t[1] then
+                                    local nm = string.lower(tostring((type(t[1])=="table") and t[1][1] or t[1]))
+                                    if nm == "dirt" then break end
+                                end
+                                local placed = placeItem(gx, gy, "dirt")
+                                if not placed then plantAndHarvest(gx, gy + 1, StatusLabel) end
+                                task.wait(0.1)
+                                retry = retry + 1
+                            end
+                        end
+
+                        local function findNearestMagmaRow()
+                            -- Kumpulkan semua row y yang ada magma
+                            local px, py = getGridPos()
+                            local bestRow, bestDist = nil, math.huge
+                            for gy = WORLD_MIN_Y, 60 do
+                                for gx = WORLD_MIN_X, WORLD_MAX_X do
+                                    if isMagma(gx, gy) and canAccess(gx, gy) then
+                                        local d = math.abs(gy - py)
+                                        if d < bestDist then
+                                            bestDist = d
+                                            bestRow = gy
                                         end
+                                        break  -- sudah ketemu magma di row ini, cukup
                                     end
                                 end
                             end
+                            return bestRow
                         end
-                    end
+
+                        local function cleanRowY(targetY)
+                            -- Scan x=0 ke 100 di row targetY, bersihin semua magma
+                            local px = select(1, getGridPos())
+                            -- Zigzag: mulai dari x terdekat
+                            local startX = px < 50 and WORLD_MIN_X or WORLD_MAX_X
+                            local endX   = px < 50 and WORLD_MAX_X or WORLD_MIN_X
+                            local stepX  = px < 50 and 1 or -1
+                            local gx = startX
+                            while gx ~= endX + stepX do
+                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                if isMagma(gx, targetY) then
+                                    breakAndPlaceMagma(gx, targetY)
+                                end
+                                gx = gx + stepX
+                            end
+                        end
+
+                        -- Loop: cari row terdekat, bersihin semua magma di row itu, ulangi
+                        local targetRow = findNearestMagmaRow()
+                        while targetRow and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                            cleanRowY(targetRow)
+                            targetRow = findNearestMagmaRow()
+                        end
 
                     -- ============================
                     -- FASE FINISH: Wooden Frame di X=1 dan X=99
