@@ -206,25 +206,52 @@ return function(SubTab, Window, myToken)
         if not Hitbox then return end
         local sx, sy = getGridPos()
         if sx == gx and sy == gy then return end
-        local path = findSmartPath(sx, sy, gx, gy)
-        if not path then
-            moveTo(gx, gy)
-            task.wait(0.2)
-            return
-        end
-        for i, point in ipairs(path) do
+
+        local maxRetry = 5
+        local retry = 0
+
+        while retry < maxRetry do
             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-            if StatusLabel then
-                StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #path))
+            sx, sy = getGridPos()
+            if sx == gx and sy == gy then break end
+
+            local path = findSmartPath(sx, sy, gx, gy)
+            if not path then
+                -- Tidak ada path, teleport langsung
+                moveTo(gx, gy)
+                task.wait(0.2)
+                break
             end
-            local px = math.floor(point.X / GRID_SIZE + 0.5)
-            local py = math.floor(point.Y / GRID_SIZE + 0.5)
-            moveTo(px, py)
-            task.wait(getgenv().DirtFarm_StepDelay)
+
+            local stuck = false
+            for i, point in ipairs(path) do
+                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                if StatusLabel then
+                    StatusLabel:SetText(string.format("Status: %s (%d/%d)", label or "Jalan", i, #path))
+                end
+                local px = math.floor(point.X / GRID_SIZE + 0.5)
+                local py = math.floor(point.Y / GRID_SIZE + 0.5)
+                moveTo(px, py)
+                task.wait(getgenv().DirtFarm_StepDelay)
+
+                -- Cek apakah server nolak (posisi tidak berubah setelah move)
+                local cx, cy = getGridPos()
+                if cx ~= px or cy ~= py then
+                    -- Server kepental, tunggu sebentar lalu retry path
+                    task.wait(0.15)
+                    stuck = true
+                    break
+                end
+            end
+
+            if not stuck then break end
+            retry = retry + 1
         end
+
+        -- Pastikan sampai tujuan
         if not isAtPosition(gx, gy) then
             moveTo(gx, gy)
-            task.wait(0.15)
+            task.wait(0.2)
         end
     end
 
@@ -444,7 +471,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v14 - 03 Mar 2026\n- Fix fase 4: place semua sampai atas lalu scan ulang max 3x (lebih cepat)\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v16 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -679,12 +706,19 @@ return function(SubTab, Window, myToken)
                             end
 
                             PosLabel:SetText(string.format("Player:(%d,%d) Place:(%d,%d)", target.gx, playerY, target.gx, target.gy))
-                            local placed = placeItem(target.gx, target.gy, "dirt")
-                            if not placed then
-                                plantAndHarvest(target.gx, playerY, StatusLabel)
-                                placeItem(target.gx, target.gy, "dirt")
+
+                            -- Retry place sampai benar-benar terpasang (max 5x)
+                            local placeRetry = 0
+                            while isTileEmpty(target.gx, target.gy) and placeRetry < 5 do
+                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                local placed = placeItem(target.gx, target.gy, "dirt")
+                                if not placed then
+                                    -- Dirt habis, farming dulu
+                                    plantAndHarvest(target.gx, playerY, StatusLabel)
+                                end
+                                task.wait(0.1)
+                                placeRetry = placeRetry + 1
                             end
-                            task.wait(0.05)
                         end
                     end
 
