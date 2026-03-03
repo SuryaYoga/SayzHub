@@ -2,7 +2,8 @@ return function(SubTab, Window, myToken)
     -- ========================================
     -- [1] SETUP
     -- ========================================
-    local tp = game:GetService("ReplicatedStorage"):WaitForChild("tp")
+    -- tp remote hanya ada saat di dalam world, pakai FindFirstChild
+    local tp = game:GetService("ReplicatedStorage"):FindFirstChild("tp")
 
     local RW = {
         WithNumber = false,
@@ -42,6 +43,14 @@ return function(SubTab, Window, myToken)
     local StatusLabel  = SubTab:AddLabel("Status: Idle")
 
     SubTab:AddButton("🎲 Generate & Teleport", function()
+        -- Coba cari remote lagi kalau belum ada (mungkin baru masuk world)
+        tp = tp or game:GetService("ReplicatedStorage"):FindFirstChild("tp")
+        if not tp then
+            Window:Notify("Remote tp tidak ditemukan! Pastikan sudah di dalam world.", 3, "danger")
+            StatusLabel:SetText("Status: Tidak di dalam world!")
+            return
+        end
+
         local worldName = randomWorldName(RW.WordLength, RW.WithNumber)
         PreviewLabel:SetText("World: " .. worldName)
         StatusLabel:SetText("Status: Teleporting...")
