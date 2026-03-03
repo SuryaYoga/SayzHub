@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v12 - 03 Mar 2026\n- Fix fase 4: parity = startY%2, X=0,1,99,100 tidak di-place, scan bawah ke atas\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v14 - 03 Mar 2026\n- Fix fase 4: place semua sampai atas lalu scan ulang max 3x (lebih cepat)\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -657,32 +657,22 @@ return function(SubTab, Window, myToken)
                         return targets
                     end
 
-                    local placeTargets = collectPlaceTargets()
+                    -- Opsi B: place semua dari list sampai atas,
+                    -- baru scan ulang. Kalau masih ada yang kosong ulangi lagi (max 3x).
+                    local maxRounds = 3
+                    for round = 1, maxRounds do
+                        if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
-                    if #placeTargets == 0 then
-                        StatusLabel:SetText("Status: Fase 4 - Tidak ada tile kosong, lanjut...")
-                    else
-                        local pidx = 1
-                        while true do
+                        local placeTargets = collectPlaceTargets()
+                        if #placeTargets == 0 then break end
+
+                        StatusLabel:SetText(string.format("Status: Place round %d (%d tile)...", round, #placeTargets))
+
+                        for _, target in ipairs(placeTargets) do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
-                            local target = placeTargets[pidx]
+                            if not isTileEmpty(target.gx, target.gy) then continue end
 
-                            -- List habis, scan ulang sekali
-                            if not target then
-                                placeTargets = collectPlaceTargets()
-                                if #placeTargets == 0 then break end
-                                pidx = 1
-                                target = placeTargets[pidx]
-                            end
-
-                            -- Skip kalau sudah ada block (mungkin sudah di-place sebelumnya)
-                            if not isTileEmpty(target.gx, target.gy) then
-                                pidx = pidx + 1
-                                continue
-                            end
-
-                            -- Player di placeY - 1 (1 tile di bawah target)
                             local playerY = target.gy - 1
                             if not isAtPosition(target.gx, playerY) then
                                 walkTo(target.gx, playerY, StatusLabel, "Place dirt")
@@ -695,8 +685,6 @@ return function(SubTab, Window, myToken)
                                 placeItem(target.gx, target.gy, "dirt")
                             end
                             task.wait(0.05)
-
-                            pidx = pidx + 1
                         end
                     end
 
