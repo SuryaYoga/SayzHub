@@ -471,7 +471,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v16 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v17 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -676,13 +676,35 @@ return function(SubTab, Window, myToken)
                             end
                             placeRow = placeRow + 2
                         end
-                        -- Urutkan dari y paling bawah ke atas
+                        -- Zigzag per row: y bawah ke atas, x bergantian tiap row
                         table.sort(targets, function(a, b)
                             if a.gy ~= b.gy then return a.gy < b.gy end
                             return a.gx < b.gx
                         end)
-                        return targets
+                        local result = {}
+                        local i = 1
+                        local rowIdx = 0
+                        while i <= #targets do
+                            local curY = targets[i].gy
+                            local rowTiles = {}
+                            while i <= #targets and targets[i].gy == curY do
+                                table.insert(rowTiles, targets[i])
+                                i = i + 1
+                            end
+                            if rowIdx % 2 == 1 then
+                                for j = #rowTiles, 1, -1 do
+                                    table.insert(result, rowTiles[j])
+                                end
+                            else
+                                for _, t in ipairs(rowTiles) do
+                                    table.insert(result, t)
+                                end
+                            end
+                            rowIdx = rowIdx + 1
+                        end
+                        return result
                     end
+
 
                     -- Opsi B: place semua dari list sampai atas,
                     -- baru scan ulang. Kalau masih ada yang kosong ulangi lagi (max 3x).
