@@ -54,23 +54,7 @@ return function(SubTab, Window, myToken)
         local Hitbox = getHitbox()
         if not Hitbox then return end
         local wx, wy = worldPos(gx, gy)
-        local targetPos = Vector3.new(wx, wy, Hitbox.Position.Z)
-
-        -- Gerak interpolasi bertahap supaya server tidak reject
-        local steps = 6
-        local startPos = Hitbox.Position
-        for s = 1, steps do
-            local t = s / steps
-            local ix = startPos.X + (targetPos.X - startPos.X) * t
-            local iy = startPos.Y + (targetPos.Y - startPos.Y) * t
-            Hitbox.CFrame = CFrame.new(ix, iy, targetPos.Z)
-            movementModule.Position = Hitbox.Position
-            pcall(function() MovPacket:FireServer(ix, iy) end)
-            task.wait(0.016)  -- ~60fps
-        end
-
-        -- Set posisi final
-        Hitbox.CFrame = CFrame.new(targetPos)
+        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
         movementModule.Position = Hitbox.Position
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
@@ -487,7 +471,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v23 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v24 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
