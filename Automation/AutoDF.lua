@@ -444,6 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
+    SubTab:AddParagraph("Versi", "v4 - 03 Mar 2026\n- Fix inventory path (dirt tidak lagi dianggap kosong)\n- Fix fase 3 tidak bolak-balik (cek block dulu sebelum scan row)\n- Fix kondisi break loop fase 3\n- Fix cek tile kosong sebelum place dirt")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
