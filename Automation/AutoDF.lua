@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v6 - 03 Mar 2026\n- Fix fase 3: scan hanya row yang bisa di-break (startY-1, startY-3, startY-5, ...)\n- Fix error nil+number di collectBreakTargets\n- Fix playerRow tidak bisa dilewati karena topblock")
+    SubTab:AddParagraph("Versi", "v7 - 03 Mar 2026\n- Fix fase 4: player mulai di startY+1, place di startY+2, naik 2-2 ke atas\n- Fix fase 3: scan hanya row parity benar (startY-1, startY-3, ...)\n- Fix error nil+number")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -618,24 +618,28 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ============================
-                    -- FASE 4: Place dirt zigzag (naik dari bawah)
-                    -- player di cy, place di cy+1, naik 2-2
+                    -- FASE 4: Place dirt zigzag (dari startY+1 naik ke atas)
+                    -- Player mulai di startY+1, place di startY+2 (1 tile di atas player)
+                    -- Naik 2-2 sampai placeY >= 60 atau habis
+                    -- placeRow = cy+1, harus sama parity dengan startY+2
                     -- ============================
                     PhaseLabel:SetText("Fase: 4 - Place Dirt")
 
-                    walkTo(2, WORLD_MIN_Y, StatusLabel, "Ke start place")
+                    -- Player mulai di startY+1, sama seperti fase 3
+                    local cy = startY + 1
+                    local goingRight = true
 
-                    local cy = WORLD_MIN_Y
-                    goingRight = true
+                    walkTo(2, cy, StatusLabel, "Ke start place")
 
-                    while cy <= startY and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
+                    while cy >= WORLD_MIN_Y and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
                         local xStart = goingRight and 2 or 98
                         local xEnd   = goingRight and 98 or 2
                         local xStep  = goingRight and 1 or -1
 
+                        local placeY = cy + 1  -- 1 tile di atas player
+
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            local placeY = cy + 1
                             if canAccess(gx, placeY) and isTileEmpty(gx, placeY) and not shouldSkip(
                                 (function()
                                     local t = worldData[gx] and worldData[gx][placeY]
@@ -649,7 +653,6 @@ return function(SubTab, Window, myToken)
                                 PosLabel:SetText(string.format("Player:(%d,%d) Place:(%d,%d)", gx, cy, gx, placeY))
                                 local placed = placeItem(gx, placeY, "dirt")
                                 if not placed then
-                                    -- Dirt benar-benar habis, farming dulu
                                     plantAndHarvest(gx, cy, StatusLabel)
                                     placeItem(gx, placeY, "dirt")
                                 end
@@ -657,8 +660,9 @@ return function(SubTab, Window, myToken)
                             end
                         end
 
-                        local nextCy = cy + 2
-                        if nextCy > startY then break end
+                        -- Naik 2 (placeY naik 2, cy naik 2)
+                        local nextCy = cy - 2
+                        if nextCy < WORLD_MIN_Y then break end
                         local nextX = goingRight and 98 or 2
                         walkTo(nextX, nextCy, StatusLabel, "Naik place")
                         cy = nextCy
