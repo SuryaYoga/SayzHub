@@ -2,7 +2,7 @@ return function(Window)
     local MenuTab = Window:AddMainTab("Menu")
     local CheatsSub = MenuTab:AddSubTab("Cheats")
     local VisualSub = MenuTab:AddSubTab("Visual")
-
+    local RandomSub = MenuTab:AddSubTab("Random World")
     local myToken = _G.LatestRunToken
 
     local function LoadFitur(fileName, subTabObj)
@@ -46,4 +46,5 @@ return function(Window)
 
     LoadFitur("Cheats.lua", CheatsSub)
     LoadFitur("Visual.lua", VisualSub)
+    LoadFitur("RandomWorld.lua", RandomSub)
 end
