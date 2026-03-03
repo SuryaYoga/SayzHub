@@ -474,7 +474,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v37 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v38 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -858,6 +858,7 @@ return function(SubTab, Window, myToken)
                             cleanRowY(targetRow)
                             targetRow = findNearestMagmaRow()
                         end
+                    end
 
                     -- ============================
                     -- FASE FINISH: Wooden Frame di X=1 dan X=99
