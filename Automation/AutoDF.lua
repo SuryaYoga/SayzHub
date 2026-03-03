@@ -472,7 +472,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v25 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v26 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -660,11 +660,11 @@ return function(SubTab, Window, myToken)
                     local function collectPlaceTargets()
                         if not startY then return {} end
                         local targets = {}
-                        -- Scan semua y dari WORLD_MIN_Y sampai 60, tanpa filter parity
-                        -- Fase 3 sudah break parity benar, tile kosong = perlu di-isi
-                        -- X=0,1,99,100 tidak di-place
-                        -- Mulai dari WORLD_MIN_Y+1 karena y=6 player tidak bisa ke y-1 (bawah bedrock)
+                        -- Filter parity: startY genap → place genap, startY ganjil → place ganjil
+                        -- Mulai dari WORLD_MIN_Y+1 karena y=6 player tidak bisa ke y-1
+                        local parity = startY % 2
                         for placeRow = WORLD_MIN_Y + 1, 60 do
+                            if placeRow % 2 ~= parity then continue end
                             for gx = 2, 98 do
                                 if isTileEmpty(gx, placeRow) and canAccess(gx, placeRow)
                                 and not shouldSkip((function()
