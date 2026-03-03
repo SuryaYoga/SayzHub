@@ -295,18 +295,20 @@ return function(SubTab, Window, myToken)
         end
     end
 
-    -- Cari slot item inventory by Id
+    -- Inventory module, path sama seperti autopnb
+    local InventoryMod
+    pcall(function() InventoryMod = require(game.ReplicatedStorage.Modules.Inventory) end)
+
     local function getSlot(itemId)
-        local ok, InventoryMod = pcall(function()
-            return require(LP.PlayerScripts:FindFirstChild("InventoryModule")
-                or LP.PlayerScripts:FindFirstChild("Inventory"))
-        end)
-        if not ok or not InventoryMod then return nil, 0 end
-        local stacks = InventoryMod.Stacks or InventoryMod.stacks
-        if not stacks then return nil, 0 end
-        for i, stack in pairs(stacks) do
-            if stack and tostring(stack.Id) == itemId then
-                return i, stack.Amount or 0
+        if not InventoryMod or not InventoryMod.Stacks then return nil, 0 end
+        for slotIndex, data in pairs(InventoryMod.Stacks) do
+            if type(data) == "table" and data.Id then
+                if tostring(data.Id) == tostring(itemId) then
+                    local amount = data.Amount or 0
+                    if amount > 0 then
+                        return slotIndex, amount
+                    end
+                end
             end
         end
         return nil, 0
@@ -620,7 +622,7 @@ return function(SubTab, Window, myToken)
                         for gx = xStart, xEnd, xStep do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                             local placeY = cy + 1
-                            if canAccess(gx, placeY) and not shouldSkip(
+                            if canAccess(gx, placeY) and isTileEmpty(gx, placeY) and not shouldSkip(
                                 (function()
                                     local t = worldData[gx] and worldData[gx][placeY]
                                     if not t or not t[1] then return nil end
@@ -633,6 +635,7 @@ return function(SubTab, Window, myToken)
                                 PosLabel:SetText(string.format("Player:(%d,%d) Place:(%d,%d)", gx, cy, gx, placeY))
                                 local placed = placeItem(gx, placeY, "dirt")
                                 if not placed then
+                                    -- Dirt benar-benar habis, farming dulu
                                     plantAndHarvest(gx, cy, StatusLabel)
                                     placeItem(gx, placeY, "dirt")
                                 end
