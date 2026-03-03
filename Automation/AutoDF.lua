@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v5 - 03 Mar 2026\n- Fix fase 3: scan semua tile breakable dulu, langsung walkTo ke (gx, gy+2) tanpa jalan row per row\n- Fase 3 tidak scan ulang tiap tile, hanya scan ulang kalau list habis\n- Fix inventory path")
+    SubTab:AddParagraph("Versi", "v6 - 03 Mar 2026\n- Fix fase 3: scan hanya row yang bisa di-break (startY-1, startY-3, startY-5, ...)\n- Fix error nil+number di collectBreakTargets\n- Fix playerRow tidak bisa dilewati karena topblock")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -556,8 +556,13 @@ return function(SubTab, Window, myToken)
                     PhaseLabel:SetText("Fase: 3 - Break Zigzag")
 
                     local function collectBreakTargets()
+                        if not startY then return {} end
                         local targets = {}
-                        for breakRow = startY - 1, WORLD_MIN_Y, -1 do
+                        -- Player selalu di startY+1, jangkauan break = 2 tile ke bawah
+                        -- Jadi breakRow dimulai dari startY-1 lalu turun 2-2 (parity sama)
+                        -- Contoh: startY=36 → breakRow = 35, 33, 31, 29, ...
+                        local breakRow = startY - 1
+                        while breakRow >= WORLD_MIN_Y do
                             for gx = 2, 98 do
                                 if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
                                     if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
@@ -565,6 +570,7 @@ return function(SubTab, Window, myToken)
                                     end
                                 end
                             end
+                            breakRow = breakRow - 2
                         end
                         return targets
                     end
