@@ -54,7 +54,23 @@ return function(SubTab, Window, myToken)
         local Hitbox = getHitbox()
         if not Hitbox then return end
         local wx, wy = worldPos(gx, gy)
-        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+        local targetPos = Vector3.new(wx, wy, Hitbox.Position.Z)
+
+        -- Gerak interpolasi bertahap supaya server tidak reject
+        local steps = 6
+        local startPos = Hitbox.Position
+        for s = 1, steps do
+            local t = s / steps
+            local ix = startPos.X + (targetPos.X - startPos.X) * t
+            local iy = startPos.Y + (targetPos.Y - startPos.Y) * t
+            Hitbox.CFrame = CFrame.new(ix, iy, targetPos.Z)
+            movementModule.Position = Hitbox.Position
+            pcall(function() MovPacket:FireServer(ix, iy) end)
+            task.wait(0.016)  -- ~60fps
+        end
+
+        -- Set posisi final
+        Hitbox.CFrame = CFrame.new(targetPos)
         movementModule.Position = Hitbox.Position
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
@@ -471,7 +487,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v18 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v23 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -659,10 +675,13 @@ return function(SubTab, Window, myToken)
                     local function collectPlaceTargets()
                         if not startY then return {} end
                         local targets = {}
-                        -- Parity place = parity startY (topblock genap → place genap)
-                        -- Scan dari startY+2 naik ke 60, step +2 (parity sama dengan startY)
+                        -- Scan semua y dari WORLD_MIN_Y sampai 60, step +2 (parity sama dengan startY+2)
+                        -- Mulai dari parity yang benar: cari y pertama >= WORLD_MIN_Y dengan parity sama startY
                         -- X=0,1,99,100 tidak di-place (biarin kosong)
-                        local placeRow = startY + 2
+                        local parity = startY % 2  -- parity topblock = parity yang di-place
+                        local placeRow = WORLD_MIN_Y
+                        -- Sesuaikan start ke parity yang benar
+                        if placeRow % 2 ~= parity then placeRow = placeRow + 1 end
                         while placeRow <= 60 do
                             for gx = 2, 98 do
                                 if isTileEmpty(gx, placeRow) and canAccess(gx, placeRow)
@@ -722,7 +741,14 @@ return function(SubTab, Window, myToken)
 
                             if not isTileEmpty(target.gx, target.gy) then continue end
 
-                            local playerY = target.gy - 1
+                            -- Handle edge: y=6 tidak bisa ke bawah, y=60 tidak bisa ke atas
+                            -- Normalnya player di gy-1, tapi kalau gy=WORLD_MIN_Y pakai gy+1
+                            local playerY
+                            if target.gy <= WORLD_MIN_Y then
+                                playerY = target.gy + 1
+                            else
+                                playerY = target.gy - 1
+                            end
                             if not isAtPosition(target.gx, playerY) then
                                 walkTo(target.gx, playerY, StatusLabel, "Place dirt")
                             end
@@ -735,7 +761,6 @@ return function(SubTab, Window, myToken)
                                 if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                                 local placed = placeItem(target.gx, target.gy, "dirt")
                                 if not placed then
-                                    -- Dirt habis, farming dulu
                                     plantAndHarvest(target.gx, playerY, StatusLabel)
                                 end
                                 task.wait(0.1)
@@ -779,8 +804,15 @@ return function(SubTab, Window, myToken)
                                                     end
                                                 end
                                                 -- Retry place dirt sampai benar-benar terpasang (max 5x)
+                                                -- Cek: tile bukan dirt = belum terpasang
+                                                local function isMagmaTileNotDirt()
+                                                    local t = worldData[gx] and worldData[gx][gy]
+                                                    if not t or not t[1] then return true end  -- kosong = belum ada dirt
+                                                    local nm = string.lower(tostring((type(t[1])=="table") and t[1][1] or t[1]))
+                                                    return nm ~= "dirt"
+                                                end
                                                 local magmaPlaceRetry = 0
-                                                while isTileEmpty(gx, gy) and magmaPlaceRetry < 5 do
+                                                while isMagmaTileNotDirt() and magmaPlaceRetry < 5 do
                                                     if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                                                     local placed = placeItem(gx, gy, "dirt")
                                                     if not placed then
@@ -799,11 +831,28 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE FINISH: Wooden Frame di X=1 dan X=99
+                    -- Scan y dari WORLD_MIN_Y sampai 60 (bukan cuma sampai startY)
+                    -- Player di gy-1, kecuali gy=WORLD_MIN_Y pakai gy+1
+                    -- Retry sampai benar-benar terpasang (max 5x)
                     -- ============================
                     if getgenv().DirtFarm_WoodFrame then
                         PhaseLabel:SetText("Fase: Finish - Wooden Frame")
+
+                        local function placeFrameAt(fx, fy)
+                            if not canAccess(fx, fy) then return end
+                            local playerY = (fy <= WORLD_MIN_Y) and (fy + 1) or (fy - 1)
+                            walkTo(fx, playerY, StatusLabel, "Frame")
+                            local frameRetry = 0
+                            while isTileEmpty(fx, fy) and frameRetry < 5 do
+                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                placeItem(fx, fy, "wooden_frame")
+                                task.wait(0.15)
+                                frameRetry = frameRetry + 1
+                            end
+                        end
+
                         local rowsWithBlock = {}
-                        for gy = WORLD_MIN_Y, startY do
+                        for gy = WORLD_MIN_Y, 60 do
                             for gx = 2, 98 do
                                 if not isTileEmpty(gx, gy) then
                                     rowsWithBlock[gy] = true
@@ -811,20 +860,19 @@ return function(SubTab, Window, myToken)
                                 end
                             end
                         end
-                        for gy = WORLD_MIN_Y, startY do
+
+                        for gy = WORLD_MIN_Y, 60 do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            if rowsWithBlock[gy] and canAccess(1, gy) then
+                            if rowsWithBlock[gy] then
                                 PosLabel:SetText(string.format("Wooden Frame: (1,%d)", gy))
-                                walkTo(1, gy + 1, StatusLabel, "Frame kiri")
-                                placeItem(1, gy, "wooden_frame")
+                                placeFrameAt(1, gy)
                             end
                         end
-                        for gy = WORLD_MIN_Y, startY do
+                        for gy = WORLD_MIN_Y, 60 do
                             if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            if rowsWithBlock[gy] and canAccess(99, gy) then
+                            if rowsWithBlock[gy] then
                                 PosLabel:SetText(string.format("Wooden Frame: (99,%d)", gy))
-                                walkTo(99, gy + 1, StatusLabel, "Frame kanan")
-                                placeItem(99, gy, "wooden_frame")
+                                placeFrameAt(99, gy)
                             end
                         end
                     end
