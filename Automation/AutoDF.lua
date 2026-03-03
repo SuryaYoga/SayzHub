@@ -561,25 +561,40 @@ return function(SubTab, Window, myToken)
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
 
                         local breakRow = currentPlayerRow - 2
-                        local xStart   = goingRight and 2 or 98
-                        local xEnd     = goingRight and 98 or 2
-                        local xStep    = goingRight and 1 or -1
 
-                        for gx = xStart, xEnd, xStep do
-                            if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                        -- Cek dulu apakah masih ada block yang bisa di-break di breakRow ini
+                        local hasBlockInRow = false
+                        for gx = 2, 98 do
                             if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
                                 if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
-                                    if not isAtPosition(gx, currentPlayerRow) then
-                                        walkTo(gx, currentPlayerRow, StatusLabel, "Zigzag")
-                                    end
-                                    PosLabel:SetText(string.format("Player:(%d,%d) Break:(%d,%d)", gx, currentPlayerRow, gx, breakRow))
-                                    breakTile(gx, breakRow, gx)
+                                    hasBlockInRow = true
+                                    break
                                 end
                             end
                         end
 
+                        if hasBlockInRow then
+                            local xStart = goingRight and 2 or 98
+                            local xEnd   = goingRight and 98 or 2
+                            local xStep  = goingRight and 1 or -1
+
+                            for gx = xStart, xEnd, xStep do
+                                if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                if not isTileEmpty(gx, breakRow) and canAccess(gx, breakRow) then
+                                    if getTileLayer1(gx, breakRow) or getTileLayer2(gx, breakRow) then
+                                        if not isAtPosition(gx, currentPlayerRow) then
+                                            walkTo(gx, currentPlayerRow, StatusLabel, "Zigzag")
+                                        end
+                                        PosLabel:SetText(string.format("Player:(%d,%d) Break:(%d,%d)", gx, currentPlayerRow, gx, breakRow))
+                                        breakTile(gx, breakRow, gx)
+                                    end
+                                end
+                            end
+                        end
+
+                        -- Turun ke row berikutnya
                         local nextRow = currentPlayerRow - 2
-                        if nextRow - 2 < WORLD_MIN_Y then break end
+                        if nextRow < WORLD_MIN_Y then break end
                         local nextX = goingRight and 98 or 2
                         walkTo(nextX, nextRow, StatusLabel, "Turun row")
                         currentPlayerRow = nextRow
