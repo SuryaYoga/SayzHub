@@ -73,7 +73,8 @@ return function(SubTab, Window, myToken)
         local n = string.lower(tostring(itemName))
         if string.find(n, "lock") then return true end
         if string.find(n, "door") then return true end
-        if n == "bedrock"         then return true end
+        if n == "bedrock"                 then return true end
+        if string.find(n, "wooden_frame") then return true end
         return false
     end
 
@@ -471,7 +472,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v24 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v25 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -659,14 +660,10 @@ return function(SubTab, Window, myToken)
                     local function collectPlaceTargets()
                         if not startY then return {} end
                         local targets = {}
-                        -- Scan semua y dari WORLD_MIN_Y sampai 60, step +2 (parity sama dengan startY+2)
-                        -- Mulai dari parity yang benar: cari y pertama >= WORLD_MIN_Y dengan parity sama startY
-                        -- X=0,1,99,100 tidak di-place (biarin kosong)
-                        local parity = startY % 2  -- parity topblock = parity yang di-place
-                        local placeRow = WORLD_MIN_Y
-                        -- Sesuaikan start ke parity yang benar
-                        if placeRow % 2 ~= parity then placeRow = placeRow + 1 end
-                        while placeRow <= 60 do
+                        -- Scan semua y dari WORLD_MIN_Y sampai 60, tanpa filter parity
+                        -- Fase 3 sudah break parity benar, tile kosong = perlu di-isi
+                        -- X=0,1,99,100 tidak di-place
+                        for placeRow = WORLD_MIN_Y, 60 do
                             for gx = 2, 98 do
                                 if isTileEmpty(gx, placeRow) and canAccess(gx, placeRow)
                                 and not shouldSkip((function()
@@ -677,7 +674,6 @@ return function(SubTab, Window, myToken)
                                     table.insert(targets, {gx = gx, gy = placeRow})
                                 end
                             end
-                            placeRow = placeRow + 2
                         end
                         -- Zigzag per row: y bawah ke atas, x bergantian tiap row
                         table.sort(targets, function(a, b)
