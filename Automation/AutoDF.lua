@@ -471,7 +471,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v17 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v18 - 03 Mar 2026\n- Fix place: retry sampai benar-benar terpasang (cek worldData), max 5x\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -778,7 +778,17 @@ return function(SubTab, Window, myToken)
                                                         task.wait(0.1)
                                                     end
                                                 end
-                                                placeItem(gx, gy, "dirt")
+                                                -- Retry place dirt sampai benar-benar terpasang (max 5x)
+                                                local magmaPlaceRetry = 0
+                                                while isTileEmpty(gx, gy) and magmaPlaceRetry < 5 do
+                                                    if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+                                                    local placed = placeItem(gx, gy, "dirt")
+                                                    if not placed then
+                                                        plantAndHarvest(gx, gy + 1, StatusLabel)
+                                                    end
+                                                    task.wait(0.1)
+                                                    magmaPlaceRetry = magmaPlaceRetry + 1
+                                                end
                                             end
                                         end
                                     end
