@@ -472,7 +472,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v27 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
+    SubTab:AddParagraph("Versi", "v28 - 03 Mar 2026\n- Fix collectPlaceTargets: scan dari WORLD_MIN_Y+1 (y=6 dilewati, player tidak bisa ke y-1)\n- Fix shouldSkip: tambah wooden_frame supaya fase 1&2 tidak break wooden_frame")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -546,9 +546,10 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE 1: Break kolom kiri (X=0 dan X=1)
+                    -- Scan dari startY+2 ke atas (y=60), bukan ke bawah
                     -- ============================
                     PhaseLabel:SetText("Fase: 1 - Break Kiri")
-                    for gy = startY - 1, WORLD_MIN_Y, -1 do
+                    for gy = 60, startY + 2, -1 do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                         local has0 = not isTileEmpty(0, gy) and canAccess(0, gy) and (getTileLayer1(0,gy) or getTileLayer2(0,gy))
                         local has1 = not isTileEmpty(1, gy) and canAccess(1, gy) and (getTileLayer1(1,gy) or getTileLayer2(1,gy))
@@ -562,9 +563,10 @@ return function(SubTab, Window, myToken)
 
                     -- ============================
                     -- FASE 2: Break kolom kanan (X=99 dan X=100)
+                    -- Scan dari startY+2 ke atas (y=60), bukan ke bawah
                     -- ============================
                     PhaseLabel:SetText("Fase: 2 - Break Kanan")
-                    for gy = startY - 1, WORLD_MIN_Y, -1 do
+                    for gy = 60, startY + 2, -1 do
                         if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
                         local has99  = not isTileEmpty(99,  gy) and canAccess(99,  gy) and (getTileLayer1(99,gy)  or getTileLayer2(99,gy))
                         local has100 = not isTileEmpty(100, gy) and canAccess(100, gy) and (getTileLayer1(100,gy) or getTileLayer2(100,gy))
