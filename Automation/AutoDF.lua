@@ -444,7 +444,7 @@ return function(SubTab, Window, myToken)
     local PosLabel    = SubTab:AddLabel("Posisi  : -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "v10 - 03 Mar 2026\n- Fix arah scan & parity benar: startY = bedrock atas, scan turun ke bawah\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
+    SubTab:AddParagraph("Versi", "v12 - 03 Mar 2026\n- Fix fase 4: parity = startY%2, X=0,1,99,100 tidak di-place, scan bawah ke atas\n- Fix fase 0: parity (startY-1)%2, border X=0,1,99,100 break semua row\n- Fase 4: cy+2 naik ke atas (y besar = atas)sihin block yang sudah di-place")
     SubTab:AddParagraph("Alur Bot",
         "Fase 0: Bersihkan block di atas main door (skip door/bedrock/lock).\n" ..
         "Fase 1 & 2: Break kolom paling kiri (X=0,1) dan kanan (X=99,100) dari atas ke bawah.\n" ..
@@ -619,55 +619,85 @@ return function(SubTab, Window, myToken)
                     end
 
                     -- ============================
-                    -- FASE 4: Place dirt zigzag (dari startY+1 naik ke atas)
-                    -- Player mulai di startY+1, place di startY+2 (1 tile di atas player)
-                    -- Naik 2-2 sampai placeY >= 60 atau habis
-                    -- placeRow = cy+1, harus sama parity dengan startY+2
+                    -- FASE 4: Place dirt
+                    -- Scan semua tile yang perlu di-place:
+                    --   X=2-98: hanya placeRow dengan parity sama dengan (startY+2)%2
+                    --   X=0,1,99,100: semua row kosong
+                    -- Batas atas: placeY <= startY-1 (tidak boleh place di topblock/atasnya)
+                    -- Urutkan dari y paling bawah, naik ke atas
+                    -- Player di placeY-1, place di placeY
                     -- ============================
                     PhaseLabel:SetText("Fase: 4 - Place Dirt")
 
-                    -- Player mulai di startY+1, sama seperti fase 3
-                    local cy = startY + 1
-                    local goingRight = true
-
-                    walkTo(2, cy, StatusLabel, "Ke start place")
-
-                    while cy + 1 <= 60 and getgenv().DirtFarm_Enabled and _G.LatestRunToken == myToken do
-                        local xStart = goingRight and 2 or 98
-                        local xEnd   = goingRight and 98 or 2
-                        local xStep  = goingRight and 1 or -1
-
-                        local placeY = cy + 1  -- 1 tile di atas player
-
-                        for gx = xStart, xEnd, xStep do
-                            if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
-                            if canAccess(gx, placeY) and isTileEmpty(gx, placeY) and not shouldSkip(
-                                (function()
-                                    local t = worldData[gx] and worldData[gx][placeY]
+                    local function collectPlaceTargets()
+                        if not startY then return {} end
+                        local targets = {}
+                        -- Parity place = parity startY (topblock genap → place genap)
+                        -- Scan dari startY+2 naik ke 60, step +2 (parity sama dengan startY)
+                        -- X=0,1,99,100 tidak di-place (biarin kosong)
+                        local placeRow = startY + 2
+                        while placeRow <= 60 do
+                            for gx = 2, 98 do
+                                if isTileEmpty(gx, placeRow) and canAccess(gx, placeRow)
+                                and not shouldSkip((function()
+                                    local t = worldData[gx] and worldData[gx][placeRow]
                                     if not t or not t[1] then return nil end
                                     return (type(t[1])=="table") and t[1][1] or t[1]
-                                end)()
-                            ) then
-                                if not isAtPosition(gx, cy) then
-                                    walkTo(gx, cy, StatusLabel, "Place dirt")
+                                end)()) then
+                                    table.insert(targets, {gx = gx, gy = placeRow})
                                 end
-                                PosLabel:SetText(string.format("Player:(%d,%d) Place:(%d,%d)", gx, cy, gx, placeY))
-                                local placed = placeItem(gx, placeY, "dirt")
-                                if not placed then
-                                    plantAndHarvest(gx, cy, StatusLabel)
-                                    placeItem(gx, placeY, "dirt")
-                                end
-                                task.wait(0.05)
                             end
+                            placeRow = placeRow + 2
                         end
+                        -- Urutkan dari y paling bawah ke atas
+                        table.sort(targets, function(a, b)
+                            if a.gy ~= b.gy then return a.gy < b.gy end
+                            return a.gx < b.gx
+                        end)
+                        return targets
+                    end
 
-                        -- Naik 2 ke atas (y bertambah = makin atas)
-                        local nextCy = cy + 2
-                        if nextCy + 1 > 60 then break end
-                        local nextX = goingRight and 98 or 2
-                        walkTo(nextX, nextCy, StatusLabel, "Naik place")
-                        cy = nextCy
-                        goingRight = not goingRight
+                    local placeTargets = collectPlaceTargets()
+
+                    if #placeTargets == 0 then
+                        StatusLabel:SetText("Status: Fase 4 - Tidak ada tile kosong, lanjut...")
+                    else
+                        local pidx = 1
+                        while true do
+                            if not getgenv().DirtFarm_Enabled or _G.LatestRunToken ~= myToken then break end
+
+                            local target = placeTargets[pidx]
+
+                            -- List habis, scan ulang sekali
+                            if not target then
+                                placeTargets = collectPlaceTargets()
+                                if #placeTargets == 0 then break end
+                                pidx = 1
+                                target = placeTargets[pidx]
+                            end
+
+                            -- Skip kalau sudah ada block (mungkin sudah di-place sebelumnya)
+                            if not isTileEmpty(target.gx, target.gy) then
+                                pidx = pidx + 1
+                                continue
+                            end
+
+                            -- Player di placeY - 1 (1 tile di bawah target)
+                            local playerY = target.gy - 1
+                            if not isAtPosition(target.gx, playerY) then
+                                walkTo(target.gx, playerY, StatusLabel, "Place dirt")
+                            end
+
+                            PosLabel:SetText(string.format("Player:(%d,%d) Place:(%d,%d)", target.gx, playerY, target.gx, target.gy))
+                            local placed = placeItem(target.gx, target.gy, "dirt")
+                            if not placed then
+                                plantAndHarvest(target.gx, playerY, StatusLabel)
+                                placeItem(target.gx, target.gy, "dirt")
+                            end
+                            task.wait(0.05)
+
+                            pidx = pidx + 1
+                        end
                     end
 
                     -- ============================
