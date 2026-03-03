@@ -31,35 +31,6 @@ return function(Window)
     end)
     Home:AddButton("Hancurkan UI", function() Window:Destroy() end)
 
-    -- ========================================
-    -- AUTO EXECUTE TOGGLE
-    -- Tulis file ke Delta autoexec folder
-    -- Toggle ON  → tulis script loader ke file
-    -- Toggle OFF → kosongkan file (disabled)
-    -- ========================================
-    Home:AddSection("Auto Execute")
-    Home:AddParagraph("Cara Pakai", "Aktifkan toggle ini, lalu taruh file 'sayz_autoexec.lua' di folder autoexec Delta. Script akan otomatis jalan setiap kali game/world load ulang.")
-
-    local autoExecFile    = "sayz_autoexec.lua"
-    local autoExecContent = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/SuryaYoga/SayzHub/main/Main.lua"))()'
-
-    -- Cek apakah file sudah aktif saat ini
-    local isAutoExecActive = false
-    pcall(function()
-        local content = readfile(autoExecFile)
-        isAutoExecActive = content ~= nil and content ~= "-- disabled" and #content > 0
-    end)
-
-    getgenv().SayzUI_Handles["AutoExec"] = Home:AddToggle("Auto Execute", isAutoExecActive, function(t)
-        if t then
-            pcall(function() writefile(autoExecFile, autoExecContent) end)
-            Window:Notify("Auto Execute ON — sayz_autoexec.lua disimpan!", 3, "ok")
-        else
-            pcall(function() writefile(autoExecFile, "-- disabled") end)
-            Window:Notify("Auto Execute OFF", 2, "danger")
-        end
-    end)
-
     -- 2. SUBTAB TUTORIAL & INFO
     local TutorSub = BerandaTab:AddSubTab("Panduan Umum")
     TutorSub:AddSection("Dasar Penggunaan")
