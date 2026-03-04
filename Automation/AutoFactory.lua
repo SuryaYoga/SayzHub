@@ -349,7 +349,7 @@ return function(SubTab, Window, myToken)
     -- Scan baris Y: cari semua X yang ada block di Y-1 (bawah baris)
     local function scanPlantableX(rowY)
         local result = {}
-        for gx = WORLD_MIN_X+2, WORLD_MAX_X-2 do
+        for gx = WORLD_MIN_X, WORLD_MAX_X do
             local belowY = rowY - 1
             if worldData[gx] and worldData[gx][belowY] then
                 local l1 = worldData[gx][belowY][1]
