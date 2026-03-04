@@ -639,6 +639,15 @@ return function(SubTab, Window, myToken)
                     StepLabel:SetText("Fase: PnB [Collect]")
                     StatusLabel:SetText("Status: Collect drop dulu...")
                     collectAtX0()
+                    -- Balik ke x=1 setelah collect
+                    local hb = getHitbox()
+                    if hb then
+                        local wx, wy = 1*4.5, rowY*4.5
+                        hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
+                        movementModule.Position = hb.Position
+                        pcall(function() MovPacket:FireServer(wx, wy) end)
+                        task.wait(0.05)
+                    end
                 else
                     -- Bersih → place langsung (tidak perlu gerak)
                     StepLabel:SetText("Fase: PnB [Place]")
