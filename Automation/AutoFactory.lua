@@ -315,6 +315,7 @@ return function(SubTab, Window, myToken)
                 end
                 break
             end
+            local rubberband = false
             for i, pt in ipairs(path) do
                 if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
                 if label then label:SetText(string.format("%s (%d/%d)", hint or "Jalan", i, #path)) end
@@ -324,11 +325,23 @@ return function(SubTab, Window, myToken)
                     hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
                     movementModule.Position = hb.Position
                     pcall(function() MovPacket:FireServer(wx, wy) end)
+                    task.wait(0.1)
+                    -- Cek rubberband: posisi aktual jauh dari yang diharapkan?
+                    local actualX = math.floor(hb.Position.X / 4.5 + 0.5)
+                    local actualY = math.floor(hb.Position.Y / 4.5 + 0.5)
+                    if actualX ~= pt.x or actualY ~= pt.y then
+                        -- Kena rubberband - diam sebentar di posisi server, lalu mulai ulang
+                        task.wait(0.1)
+                        rubberband = true
+                        break
+                    end
+                else
+                    task.wait(0.1)
                 end
-                task.wait(0.1)
             end
             local ax, ay = getGridPos()
             if ax == tx and ay == ty then break end
+            if rubberband then task.wait(0.1) end
             retry = retry + 1
         end
     end
