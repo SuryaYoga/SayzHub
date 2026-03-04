@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v13 - 04 Mar 2026\n- Fix facing: pakai movementModule.MoveX (-1=kiri, 1=kanan) sebelum drop\n- Item jatuh ke arah drop point, tidak menghalangi jalur balik\n- SmartCollect dimatikan sementara saat balik dari drop\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v14 - 04 Mar 2026\n- Fix facing: pakai VirtualInputManager:SendKeyEvent (A/D) sebelum drop\n- Item jatuh ke arah yang benar\n- SmartCollect dimatikan sementara saat balik dari drop\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -901,9 +901,11 @@ return function(SubTab, Window, myToken)
                             -- Hadapkan karakter ke arah drop point sebelum drop
                             -- supaya item jatuh ke arah drop point, tidak ke jalur balik
                             do
-                                -- MoveX: -1 = kiri, 1 = kanan
-                                local faceDir = (DropSettings.DropPoint.x < dropReturnX) and -1 or 1
-                                movementModule.MoveX = faceDir
+                                local vim = game:GetService("VirtualInputManager")
+                                local faceKey = (DropSettings.DropPoint.x < dropReturnX) and Enum.KeyCode.A or Enum.KeyCode.D
+                                vim:SendKeyEvent(true, faceKey, false, game)
+                                task.wait(0.15)
+                                vim:SendKeyEvent(false, faceKey, false, game)
                                 task.wait(0.1)
                             end
 
