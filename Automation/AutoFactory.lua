@@ -543,17 +543,23 @@ return function(SubTab, Window, myToken)
 
         -- Pastikan di x=1, retry kalau rubberband
         local function ensureAtX1()
-            for _ = 1, 5 do
-                local cx, cy = getGridPos()
-                if cx == 1 and cy == rowY then return true end
-                walkTo(1, rowY, StatusLabel, "Ke x=1")
-                task.wait(0.15)
+            local cx, cy = getGridPos()
+            if cx == 1 and cy == rowY then return true end
+            -- Langsung teleport ke x=1, tidak pakai walkTo (lebih cepat)
+            local hb = getHitbox()
+            if hb then
+                hb.CFrame = CFrame.new(1*4.5, rowY*4.5, hb.Position.Z)
+                movementModule.Position = hb.Position
+                task.wait(0.05)
             end
-            return false
+            cx, cy = getGridPos()
+            return cx == 1 and cy == rowY
         end
 
         -- Helper: collect semua drop di x=0-2 baris rowY sampai bersih
         -- Collect drop + gems di x=0 saja (tile break), nearest first, sampai bersih
+        -- badItemsPnB: cache item yang sudah dicoba tapi tidak hilang (stuck), skip permanen
+        local badItemsPnB = {}
         local function collectNearPnB()
             local hb = getHitbox()
             if not hb then return end
@@ -562,16 +568,17 @@ return function(SubTab, Window, myToken)
             while c < maxCycles do
                 if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
                 local drops = {}
-                -- Scan Drops dan Gems di x=0 baris rowY saja
                 for _, folderName in ipairs({"Drops", "Gems"}) do
                     local container = workspace:FindFirstChild(folderName)
                     if container then
                         for _, item in pairs(container:GetChildren()) do
-                            local itPos = item:GetPivot().Position
-                            local itX = math.floor(itPos.X / 4.5 + 0.5)
-                            local itY = math.floor(itPos.Y / 4.5 + 0.5)
-                            if itY == rowY and itX == 0 then
-                                table.insert(drops, {item=item, x=itX, y=itY})
+                            if not badItemsPnB[item] then
+                                local itPos = item:GetPivot().Position
+                                local itX = math.floor(itPos.X / 4.5 + 0.5)
+                                local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                                if itY == rowY and itX == 0 then
+                                    table.insert(drops, {item=item, x=itX, y=itY})
+                                end
                             end
                         end
                     end
@@ -586,9 +593,17 @@ return function(SubTab, Window, myToken)
                     if dist < nearestDist then nearestDist = dist; nearest = d end
                 end
                 if nearest then
+                    local prevPos = hb.Position
                     hb.CFrame = CFrame.new(nearest.x*4.5, nearest.y*4.5, hb.Position.Z)
                     movementModule.Position = hb.Position
-                    task.wait(0.05)
+                    task.wait(0.1)
+                    -- Kalau item masih ada setelah diambil = stuck, masuk badItems
+                    if nearest.item and nearest.item.Parent then
+                        local newPos = hb.Position
+                        if (newPos - prevPos).Magnitude < 0.1 then
+                            badItemsPnB[nearest.item] = true
+                        end
+                    end
                 end
                 c = c + 1
             end
