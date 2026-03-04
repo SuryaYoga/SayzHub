@@ -566,6 +566,19 @@ return function(SubTab, Window, myToken)
         local pnbPos = Vector2.new(0, rowY)
         local lastX, lastY = nil, nil  -- track posisi terakhir, gerak hanya kalau berubah
 
+        -- Pastikan di x=1 sebelum mulai break/place
+        local hb0 = getHitbox()
+        if hb0 then
+            local cx, cy = getGridPos()
+            if cx ~= 1 or cy ~= rowY then
+                local wx, wy = 1*4.5, rowY*4.5
+                hb0.CFrame = CFrame.new(wx, wy, hb0.Position.Z)
+                movementModule.Position = hb0.Position
+                pcall(function() MovPacket:FireServer(wx, wy) end)
+                task.wait(0.1)
+            end
+        end
+
         -- Helper collect drop di x=0: hanya gerak kalau ada drop, dan posisi berubah
         local badItemsPnB = {}
         local function collectAtX0()
