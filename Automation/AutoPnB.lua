@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v10 - 04 Mar 2026\n- Fix freeze: blacklist cache O(1)\n- Fix grid geser: formula /4.5 konsisten\n- Fix walkback collect & drop: retry loop\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v11 - 04 Mar 2026\n- Fix WalkToDropPoint: retry sampai benar-benar sampai\n- Deteksi drop point tertutup semua sisi → drop acak + notif\n- Fix freeze & grid geser\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. [Opsional] Smart Collect: ambil item drop otomatis.")
     SubTab:AddLabel("   ⚠️ Wajib aktifkan Lock Position jika pakai Smart Collect!")
@@ -662,7 +662,46 @@ return function(SubTab, Window, myToken)
         RestoreUIFromSnapshot(snapshot)
     end
 
+    -- Cek apakah tile benar-benar diblok dari semua 4 sisi (bukan server rubberband)
+    local function isEnclosed(gx, gy)
+        local dirs = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        for _, d in ipairs(dirs) do
+            if isWalkableDrop(gx + d.x, gy + d.y) then
+                return false -- ada sisi yang bisa dilewati
+            end
+        end
+        return true -- semua 4 sisi terblok block
+    end
+
+    -- Cari tile walkable terdekat di sekitar target (untuk drop acak)
+    local function findNearestWalkableAround(gx, gy)
+        for radius = 1, 5 do
+            for dy = -radius, radius do
+                for dx = -radius, radius do
+                    local nx, ny = gx + dx, gy + dy
+                    if isWalkableDrop(nx, ny) then
+                        return nx, ny
+                    end
+                end
+            end
+        end
+        return nil, nil
+    end
+
     local function WalkToDropPoint(Hitbox, targetX, targetY)
+        -- Cek dulu apakah drop point tertutup semua sisi
+        if isEnclosed(targetX, targetY) then
+            -- Cari posisi terdekat yang bisa dicapai
+            local nx, ny = findNearestWalkableAround(targetX, targetY)
+            if nx then
+                Window:Notify(string.format("⚠️ Drop Point tertutup! Drop acak di (%d,%d)", nx, ny), 4, "warn")
+                targetX, targetY = nx, ny
+            else
+                Window:Notify("⚠️ Drop Point tidak bisa dicapai sama sekali!", 4, "danger")
+                return
+            end
+        end
+
         local maxRetry = 5
         local retry = 0
         while retry < maxRetry do
@@ -670,27 +709,33 @@ return function(SubTab, Window, myToken)
             local curX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
             local curY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
             if curX == targetX and curY == targetY then break end
+
             local path = findSmartPathDrop(curX, curY, targetX, targetY)
             if not path then
-                -- Fallback teleport
-                DropStatusLabel:SetText("Drop: Teleport ke Drop Point...")
-                Hitbox.CFrame = CFrame.new(targetX * 4.5, targetY * 4.5, Hitbox.Position.Z)
-                movementModule.Position = Hitbox.Position
-                task.wait(0.2)
-                break
+                -- Path nil = target tidak bisa dicapai via pathfinding
+                -- Cari tile walkable terdekat lalu drop di sana
+                local nx, ny = findNearestWalkableAround(targetX, targetY)
+                if nx and (nx ~= targetX or ny ~= targetY) then
+                    Window:Notify(string.format("⚠️ Drop Point tidak bisa dicapai! Drop acak di (%d,%d)", nx, ny), 4, "warn")
+                    targetX, targetY = nx, ny
+                    retry = 0
+                else
+                    break
+                end
+            else
+                for i, point in ipairs(path) do
+                    if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then break end
+                    DropStatusLabel:SetText(string.format("Drop: Jalan ke Drop Point (%d/%d)...", i, #path))
+                    Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
+                    movementModule.Position = Hitbox.Position
+                    task.wait(getgenv().StepDelay)
+                end
+                -- Cek setelah jalan apakah sudah sampai
+                local ax = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                local ay = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+                if ax == targetX and ay == targetY then break end
+                retry = retry + 1
             end
-            for i, point in ipairs(path) do
-                if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then break end
-                DropStatusLabel:SetText(string.format("Drop: Jalan ke Drop Point (%d/%d)...", i, #path))
-                Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
-                movementModule.Position = Hitbox.Position
-                task.wait(getgenv().StepDelay)
-            end
-            -- Cek setelah jalan - kalau sudah sampai langsung break
-            local ax = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-            local ay = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-            if ax == targetX and ay == targetY then break end
-            retry = retry + 1
         end
     end
 
