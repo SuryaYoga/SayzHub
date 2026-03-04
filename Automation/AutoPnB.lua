@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v15 - 04 Mar 2026\n- Fix drop sembarangan: cek posisi setelah jalan path sebelum lanjut drop\n- Fix facing: VirtualInputManager A/D sebelum drop\n- SmartCollect dimatikan saat balik dari drop\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v16 - 04 Mar 2026\n- Fix drop sembarangan: facing A/D hanya dijalankan setelah dipastikan sampai di drop point\n- SmartCollect dimatikan saat balik dari drop\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -902,9 +902,13 @@ return function(SubTab, Window, myToken)
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
                             WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
 
-                            -- Hadapkan karakter ke arah drop point sebelum drop
-                            -- supaya item jatuh ke arah drop point, tidak ke jalur balik
-                            do
+                            if not PnB.Master or _G.LatestRunToken ~= myToken then return end
+
+                            -- Pastikan sudah sampai di drop point dulu
+                            local arrivedX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                            local arrivedY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+                            if arrivedX == DropSettings.DropPoint.x and arrivedY == DropSettings.DropPoint.y then
+                                -- Baru hadapkan karakter setelah dipastikan sudah sampai
                                 local vim = game:GetService("VirtualInputManager")
                                 local faceKey = (DropSettings.DropPoint.x < dropReturnX) and Enum.KeyCode.A or Enum.KeyCode.D
                                 vim:SendKeyEvent(true, faceKey, false, game)
@@ -912,8 +916,6 @@ return function(SubTab, Window, myToken)
                                 vim:SendKeyEvent(false, faceKey, false, game)
                                 task.wait(0.1)
                             end
-
-                            if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
                             local uiSnapshot = SnapshotUI()
                             DoDropAll(uiSnapshot)
