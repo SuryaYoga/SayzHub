@@ -12,6 +12,7 @@ return function(SubTab, Window, myToken)
     local PlayerFist  = RS.Remotes.PlayerFist
     local PlayerDrop  = RS.Remotes:FindFirstChild("PlayerDrop")
     local UIPromptEvent = RS.Managers:WaitForChild("UIManager"):FindFirstChild("UIPromptEvent")
+    local MovPacket   = RS.Remotes:WaitForChild("PlayerMovementPackets"):WaitForChild(LP.Name)
 
     local InventoryMod
     pcall(function() InventoryMod = require(RS.Modules.Inventory) end)
@@ -317,8 +318,10 @@ return function(SubTab, Window, myToken)
                 if label then label:SetText(string.format("%s (%d/%d)", hint or "Jalan", i, #path)) end
                 local hb = getHitbox()
                 if hb then
-                    hb.CFrame = CFrame.new(pt.x*4.5, pt.y*4.5, hb.Position.Z)
+                    local wx, wy = pt.x*4.5, pt.y*4.5
+                    hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
                     movementModule.Position = hb.Position
+                    pcall(function() MovPacket:FireServer(wx, wy) end)
                 end
                 task.wait(0.05)
             end
@@ -450,37 +453,44 @@ return function(SubTab, Window, myToken)
     end
 
     -- FASE 3: HARVEST
-    -- Scan rowY untuk tile yang ada tanaman (sapling/crop dari planted list)
-    -- Harvest semua yang ketemu di baris itu
-    -- Setelah selesai langsung jalan ke x=1 (posisi PnB), drop ke-collect otomatis saat jalan
+    -- Scan rowY, harvest dari x kecil ke besar supaya drop ke-collect saat jalan ke kanan
+    -- Tunggu tile benar-benar hancur (worldData kosong) sebelum pindah ke tile berikutnya
     local function doHarvest(rowY, plantedXs)
         StepLabel:SetText("Fase: Harvest")
 
-        -- Scan ulang dari worldData untuk tile yang masih ada tanaman di rowY
+        -- Scan ulang worldData untuk tile yang masih ada tanaman
         local toHarvest = {}
         for _, gx in ipairs(plantedXs) do
             local tile = worldData[gx] and worldData[gx][rowY]
             local fg = tile and tile[1]
-            local name = fg and (type(fg)=="table" and fg[1] or fg) or nil
-            if name then
+            if fg then
                 table.insert(toHarvest, gx)
             end
         end
 
-        -- Harvest dari kanan ke kiri (menuju x=1 posisi PnB)
-        table.sort(toHarvest, function(a, b) return a > b end)
+        -- Dari x kecil ke besar - drop ke-collect otomatis saat jalan ke kanan menuju PnB
+        table.sort(toHarvest, function(a, b) return a < b end)
 
         for _, gx in ipairs(toHarvest) do
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
             walkTo(gx, rowY, StatusLabel, "Harvest → X="..gx)
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-            PlayerFist:FireServer(Vector2.new(gx, rowY))
-            task.wait(0.1)
+
+            -- Pukul sampai tile benar-benar hancur (worldData kosong)
+            local maxHits = 30
+            local hits = 0
+            while hits < maxHits do
+                if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
+                local tile = worldData[gx] and worldData[gx][rowY]
+                if not (tile and tile[1]) then break end -- sudah hancur
+                PlayerFist:FireServer(Vector2.new(gx, rowY))
+                task.wait(0.05)
+                hits = hits + 1
+            end
         end
 
-        -- Langsung jalan ke x=1 setelah harvest
-        -- Drop otomatis ke-collect sepanjang jalan
-        StatusLabel:SetText("Status: Jalan ke PnB, collect drop...")
+        -- Jalan ke x=1, drop ke-collect otomatis sepanjang jalan
+        StatusLabel:SetText("Status: Jalan ke PnB...")
         walkTo(1, rowY, StatusLabel, "Ke PnB x=1")
         StatusLabel:SetText("Status: Harvest selesai")
     end
@@ -530,9 +540,8 @@ return function(SubTab, Window, myToken)
     end
 
     -- FASE 5: PnB di x=0, baris rowY
-    -- Fleksibel: cek kondisi x=0 tiap iterasi
-    -- Kalau ada block = break, kalau kosong = place
-    -- Pastikan selalu di x=1 sebelum tiap aksi, kalau rubberband balik ke x=1 dulu
+    -- Ikutin cara AutoPnB: langsung FireServer ke tile, tidak perlu jalan ke sana
+    -- Collect drop di x=0 setelah break, baru place
     local function doPnB(rowY)
         if not Factory.BlockID then
             Window:Notify("Block ID belum di-scan!", 3, "danger")
@@ -540,27 +549,11 @@ return function(SubTab, Window, myToken)
         end
 
         local pnbPos = Vector2.new(0, rowY)
+        local lastX, lastY = nil, nil  -- track posisi terakhir, gerak hanya kalau berubah
 
-        -- Pastikan di x=1, retry kalau rubberband
-        local function ensureAtX1()
-            local cx, cy = getGridPos()
-            if cx == 1 and cy == rowY then return true end
-            -- Langsung teleport ke x=1, tidak pakai walkTo (lebih cepat)
-            local hb = getHitbox()
-            if hb then
-                hb.CFrame = CFrame.new(1*4.5, rowY*4.5, hb.Position.Z)
-                movementModule.Position = hb.Position
-                task.wait(0.05)
-            end
-            cx, cy = getGridPos()
-            return cx == 1 and cy == rowY
-        end
-
-        -- Helper: collect semua drop di x=0-2 baris rowY sampai bersih
-        -- Collect drop + gems di x=0 saja (tile break), nearest first, sampai bersih
-        -- badItemsPnB: cache item yang sudah dicoba tapi tidak hilang (stuck), skip permanen
+        -- Helper collect drop di x=0: hanya gerak kalau ada drop, dan posisi berubah
         local badItemsPnB = {}
-        local function collectNearPnB()
+        local function collectAtX0()
             local hb = getHitbox()
             if not hb then return end
             local maxCycles = 30
@@ -587,22 +580,21 @@ return function(SubTab, Window, myToken)
                 -- Nearest first
                 local nearest, nearestDist = nil, math.huge
                 for _, d in ipairs(drops) do
-                    local dx = hb.Position.X - d.item:GetPivot().Position.X
-                    local dy = hb.Position.Y - d.item:GetPivot().Position.Y
-                    local dist = math.sqrt(dx*dx + dy*dy)
+                    local dist = (hb.Position - d.item:GetPivot().Position).Magnitude
                     if dist < nearestDist then nearestDist = dist; nearest = d end
                 end
                 if nearest then
-                    local prevPos = hb.Position
-                    hb.CFrame = CFrame.new(nearest.x*4.5, nearest.y*4.5, hb.Position.Z)
-                    movementModule.Position = hb.Position
-                    task.wait(0.1)
-                    -- Kalau item masih ada setelah diambil = stuck, masuk badItems
-                    if nearest.item and nearest.item.Parent then
-                        local newPos = hb.Position
-                        if (newPos - prevPos).Magnitude < 0.1 then
-                            badItemsPnB[nearest.item] = true
-                        end
+                    -- Hanya gerak kalau posisi target berbeda dari posisi terakhir
+                    if lastX ~= nearest.x or lastY ~= nearest.y then
+                        local wx, wy = nearest.x*4.5, nearest.y*4.5
+                        hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
+                        movementModule.Position = hb.Position
+                        pcall(function() MovPacket:FireServer(wx, wy) end)
+                        lastX, lastY = nearest.x, nearest.y
+                        task.wait(0.1)
+                    else
+                        -- Posisi sama tapi item masih ada = stuck
+                        badItemsPnB[nearest.item] = true
                     end
                 end
                 c = c + 1
@@ -614,24 +606,29 @@ return function(SubTab, Window, myToken)
         while cycle < cycleLimit do
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
 
-            -- Pastikan di x=1
-            if not ensureAtX1() then break end
-
             local tile = worldData[0] and worldData[0][rowY]
             local hasFg = tile and tile[1] ~= nil
 
-            if not hasFg then
-                -- Cek ada drop/gems di x=0 dulu sebelum collect
+            if hasFg then
+                -- Ada block → BREAK langsung (tidak perlu gerak ke sana)
+                StepLabel:SetText("Fase: PnB [Break]")
+                StatusLabel:SetText("Status: Break x=0...")
+                PlayerFist:FireServer(pnbPos)
+                task.wait(0.035)
+            else
+                -- Tile kosong → cek drop dulu
                 local hasDropAtX0 = false
                 for _, folderName in ipairs({"Drops", "Gems"}) do
                     local container = workspace:FindFirstChild(folderName)
                     if container then
                         for _, item in pairs(container:GetChildren()) do
-                            local itPos = item:GetPivot().Position
-                            if math.floor(itPos.X / 4.5 + 0.5) == 0 and
-                               math.floor(itPos.Y / 4.5 + 0.5) == rowY then
-                                hasDropAtX0 = true
-                                break
+                            if not badItemsPnB[item] then
+                                local itPos = item:GetPivot().Position
+                                if math.floor(itPos.X/4.5+0.5) == 0 and
+                                   math.floor(itPos.Y/4.5+0.5) == rowY then
+                                    hasDropAtX0 = true
+                                    break
+                                end
                             end
                         end
                     end
@@ -639,36 +636,24 @@ return function(SubTab, Window, myToken)
                 end
 
                 if hasDropAtX0 then
-                    StepLabel:SetText("Fase: PnB [Collect drop]")
-                    StatusLabel:SetText("Status: Collect drop sebelum place...")
-                    collectNearPnB()
-                    if not ensureAtX1() then break end
-                end
-
-                -- Place
-                StepLabel:SetText("Fase: PnB [Place x=0]")
-                StatusLabel:SetText("Status: Place x=0...")
-                local slotIdx, amt = getSlotByID(Factory.BlockID)
-                if not slotIdx or amt <= 0 then
-                    StatusLabel:SetText("Status: Block habis!")
-                    break
-                end
-                PlayerPlace:FireServer(pnbPos, slotIdx, 1)
-
-                -- Tunggu ter-place (max 1 detik)
-                local placed = false
-                for _ = 1, 10 do
-                    task.wait(0.1)
+                    StepLabel:SetText("Fase: PnB [Collect]")
+                    StatusLabel:SetText("Status: Collect drop dulu...")
+                    collectAtX0()
+                else
+                    -- Bersih → place langsung (tidak perlu gerak)
+                    StepLabel:SetText("Fase: PnB [Place]")
+                    StatusLabel:SetText("Status: Place x=0...")
+                    local slotIdx, amt = getSlotByID(Factory.BlockID)
+                    if not slotIdx or amt <= 0 then
+                        StatusLabel:SetText("Status: Block habis!")
+                        break
+                    end
+                    PlayerPlace:FireServer(pnbPos, slotIdx, 1)
+                    task.wait(0.12)
+                    -- Cek ter-place
                     local t = worldData[0] and worldData[0][rowY]
-                    if t and t[1] then placed = true break end
+                    if not (t and t[1]) then break end -- block habis = selesai
                 end
-                if not placed then break end
-            else
-                -- Ada block → BREAK langsung
-                StepLabel:SetText("Fase: PnB [Break x=0]")
-                StatusLabel:SetText("Status: Break x=0...")
-                PlayerFist:FireServer(pnbPos)
-                task.wait(0.035)
             end
 
             cycle = cycle + 1
