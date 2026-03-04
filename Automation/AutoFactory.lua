@@ -153,7 +153,7 @@ return function(SubTab, Window, myToken)
     local StepLabel   = SubTab:AddLabel("Fase: -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "AutoFactory v7 - 04 Mar 2026\n- Fix PnB lambat: collect drop dulu sampai bersih sebelum place\n- Urutan: collect drop → place → tunggu konfirmasi → break → ulang\n- Break langsung tanpa collect (drop collect saat break)")
+    SubTab:AddParagraph("Versi", "AutoFactory v8 - 04 Mar 2026\n- Fix collect PnB: scan x=0 saja (tile break), bukan x=0-2\n- Gems langsung diambil tanpa filter\n- Nearest first collect\n- Loop fleksibel: sapling→harvest, block→PnB, seed→tanam")
     SubTab:AddLabel("1. Berdiri di baris Y yang mau di-farm.")
     SubTab:AddLabel("2. Aktifkan Master → Y otomatis tersimpan.")
     SubTab:AddLabel("3. Scan ID Seed dan ID Block PnB.")
@@ -606,11 +606,29 @@ return function(SubTab, Window, myToken)
             local hasFg = tile and tile[1] ~= nil
 
             if not hasFg then
-                -- Tile kosong → collect drop dulu sampai bersih, baru place
-                StepLabel:SetText("Fase: PnB [Collect drop]")
-                StatusLabel:SetText("Status: Collect drop sebelum place...")
-                collectNearPnB()
-                if not ensureAtX1() then break end
+                -- Cek ada drop/gems di x=0 dulu sebelum collect
+                local hasDropAtX0 = false
+                for _, folderName in ipairs({"Drops", "Gems"}) do
+                    local container = workspace:FindFirstChild(folderName)
+                    if container then
+                        for _, item in pairs(container:GetChildren()) do
+                            local itPos = item:GetPivot().Position
+                            if math.floor(itPos.X / 4.5 + 0.5) == 0 and
+                               math.floor(itPos.Y / 4.5 + 0.5) == rowY then
+                                hasDropAtX0 = true
+                                break
+                            end
+                        end
+                    end
+                    if hasDropAtX0 then break end
+                end
+
+                if hasDropAtX0 then
+                    StepLabel:SetText("Fase: PnB [Collect drop]")
+                    StatusLabel:SetText("Status: Collect drop sebelum place...")
+                    collectNearPnB()
+                    if not ensureAtX1() then break end
+                end
 
                 -- Place
                 StepLabel:SetText("Fase: PnB [Place x=0]")
@@ -629,7 +647,7 @@ return function(SubTab, Window, myToken)
                     local t = worldData[0] and worldData[0][rowY]
                     if t and t[1] then placed = true break end
                 end
-                if not placed then break end -- tidak ada block lagi = selesai
+                if not placed then break end
             else
                 -- Ada block → BREAK langsung
                 StepLabel:SetText("Fase: PnB [Break x=0]")
