@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v3 - 04 Mar 2026\n- Fix UTAMA freeze: isWalkable tidak lagi loop workspace.Drops per node\n- Blacklist cache dibangun sekali sebelum pathfinding\n- A* parent pointer (tidak copy path)\n- baseGrid terkunci dari OriginGrid")
+    SubTab:AddParagraph("Versi", "AutoPnB v4 - 04 Mar 2026\n- Fix freeze: blacklist cache, bukan loop workspace per node\n- Fix tidak balik: walkBackToOrigin cari tile terdekat kalau origin terhalang, fallback teleport\n- A* parent pointer\n- baseGrid terkunci dari OriginGrid")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -535,9 +535,41 @@ return function(SubTab, Window, myToken)
     local function walkBackToOrigin(Hitbox, originGrid)
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+        if sx == originGrid.x and sy == originGrid.y then return end
+
+        -- Rebuild cache dulu (drop sudah di-collect, hapus dari cache)
         rebuildBlacklistCache()
+
+        -- Coba smartpath dulu, kalau nil (origin terhalang block) coba cari tile walkable terdekat
         local path = findSmartPath(sx, sy, originGrid.x, originGrid.y)
-        if not path then return end
+        if not path then
+            -- Cari tile walkable di sekitar origin (radius 1-3)
+            local found = false
+            for radius = 1, 3 do
+                for dy = -radius, radius do
+                    for dx = -radius, radius do
+                        local nx, ny = originGrid.x + dx, originGrid.y + dy
+                        local w, _ = isWalkable(nx, ny)
+                        if w then
+                            path = findSmartPath(sx, sy, nx, ny)
+                            if path then found = true break end
+                        end
+                    end
+                    if found then break end
+                end
+                if found then break end
+            end
+        end
+
+        if not path then
+            -- Fallback: teleport langsung ke origin
+            CollectStatusLabel:SetText("Collect: Teleport ke Origin...")
+            Hitbox.CFrame = CFrame.new(originGrid.x * 4.5, originGrid.y * 4.5, Hitbox.Position.Z)
+            movementModule.Position = Hitbox.Position
+            task.wait(0.2)
+            return
+        end
+
         for i, point in ipairs(path) do
             if _G.LatestRunToken ~= myToken or not PnB.Master then break end
             CollectStatusLabel:SetText("Collect: Returning (" .. i .. "/" .. #path .. ")")
