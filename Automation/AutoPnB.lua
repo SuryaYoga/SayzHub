@@ -66,6 +66,9 @@ return function(SubTab, Window, myToken)
     getgenv().SayzUI_Handles["SmartCollect_PnB"] = SubTab:AddToggle("Enable Smart Collect (Setelah Break)", getgenv().SmartCollect_Enabled, function(t)
         getgenv().SmartCollect_Enabled = t
         if t then
+            if not PnB.LockPosition then
+                Window:Notify("⚠️ Aktifkan Lock Position agar grid tidak bergeser saat collect!", 5, "warn")
+            end
             doorDatabase = {}
             for gx, columns in pairs(worldData) do
                 for gy, tileData in pairs(columns) do
@@ -369,25 +372,25 @@ return function(SubTab, Window, myToken)
         return true
     end
 
-    -- A* pathfinding untuk SmartCollect (ganti Dijkstra lama yang freeze)
+    -- A* pathfinding untuk SmartCollect - pakai parent pointer, tidak copy path
     local function findSmartPath(startX, startY, targetX, targetY)
         local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
         local startKey = startX .. "," .. startY
-        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), path={}}}
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), parent=nil}}
         local visited = {[startKey] = 0}
         local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local found   = nil
         local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limit = limit + 1
             if limit > 10000 then break end
-            -- Ambil node dengan f terkecil (tanpa table.sort penuh)
             local minIdx, minF = 1, queue[1].f
             for i = 2, #queue do
                 if queue[i].f < minF then minF = queue[i].f; minIdx = i end
             end
             local cur = table.remove(queue, minIdx)
-            if cur.x == targetX and cur.y == targetY then return cur.path end
+            if cur.x == targetX and cur.y == targetY then found = cur break end
             for _, d in ipairs(dirs) do
                 local nx, ny = cur.x + d.x, cur.y + d.y
                 local nkey   = nx .. "," .. ny
@@ -397,23 +400,29 @@ return function(SubTab, Window, myToken)
                     local ng = cur.g + moveCost
                     if not visited[nkey] or ng < visited[nkey] then
                         visited[nkey] = ng
-                        local newPath = {table.unpack(cur.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), path=newPath})
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), parent=cur})
                     end
                 end
             end
         end
-        return nil
+        if not found then return nil end
+        -- Rekonstruksi path dari parent pointer
+        local path, node = {}, found
+        while node.parent ~= nil do
+            table.insert(path, 1, Vector3.new(node.x * 4.5, node.y * 4.5, 0))
+            node = node.parent
+        end
+        return path
     end
 
-    -- A* pathfinding untuk AutoDrop
+    -- A* pathfinding untuk AutoDrop - pakai parent pointer
     local function findSmartPathDrop(startX, startY, targetX, targetY)
         local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
         local startKey = startX .. "," .. startY
-        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), path={}}}
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), parent=nil}}
         local visited = {[startKey] = 0}
         local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local found   = nil
         local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
@@ -424,7 +433,7 @@ return function(SubTab, Window, myToken)
                 if queue[i].f < minF then minF = queue[i].f; minIdx = i end
             end
             local cur = table.remove(queue, minIdx)
-            if cur.x == targetX and cur.y == targetY then return cur.path end
+            if cur.x == targetX and cur.y == targetY then found = cur break end
             for _, d in ipairs(dirs) do
                 local nx, ny = cur.x + d.x, cur.y + d.y
                 local nkey   = nx .. "," .. ny
@@ -432,14 +441,18 @@ return function(SubTab, Window, myToken)
                     local ng = cur.g + 1
                     if not visited[nkey] or ng < visited[nkey] then
                         visited[nkey] = ng
-                        local newPath = {table.unpack(cur.path)}
-                        table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), path=newPath})
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), parent=cur})
                     end
                 end
             end
         end
-        return nil
+        if not found then return nil end
+        local path, node = {}, found
+        while node.parent ~= nil do
+            table.insert(path, 1, Vector3.new(node.x * 4.5, node.y * 4.5, 0))
+            node = node.parent
+        end
+        return path
     end
 
     local function getDropsInGrid(baseGrid)
@@ -713,16 +726,15 @@ return function(SubTab, Window, myToken)
                     local root = char and char:FindFirstChild("HumanoidRootPart")
                     if not root then return end
 
-                    local baseGrid
-                    if PnB.LockPosition and PnB.OriginGrid then
-                        baseGrid = PnB.OriginGrid
-                    else
-                        baseGrid = {
+                    -- baseGrid selalu dari OriginGrid yang sudah di-set
+                    -- Tidak dihitung ulang dari posisi player supaya tidak bergeser
+                    if not PnB.OriginGrid then
+                        PnB.OriginGrid = {
                             x = math.floor((root.Position.X / 4.475) + 0.5),
                             y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
                         }
-                        PnB.OriginGrid = baseGrid
                     end
+                    local baseGrid = PnB.OriginGrid
 
                     local function getAreaInfo()
                         local targets = {}
