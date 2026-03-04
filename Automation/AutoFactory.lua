@@ -473,13 +473,17 @@ return function(SubTab, Window, myToken)
     local function doHarvest(rowY, plantedXs)
         StepLabel:SetText("Fase: Harvest")
 
-        -- Scan ulang worldData untuk tile yang masih ada tanaman
+        -- Scan x=0-100 untuk tile yang ada tanaman di rowY
         local toHarvest = {}
-        for _, gx in ipairs(plantedXs) do
+        for gx = 0, 100 do
             local tile = worldData[gx] and worldData[gx][rowY]
             local fg = tile and tile[1]
-            if fg then
-                table.insert(toHarvest, gx)
+            local name = fg and (type(fg)=="table" and fg[1] or fg) or nil
+            if name then
+                local n = string.lower(tostring(name))
+                if string.find(n, "sapling") or string.find(n, "crop") or string.find(n, "seed") then
+                    table.insert(toHarvest, gx)
+                end
             end
         end
 
@@ -567,15 +571,10 @@ return function(SubTab, Window, myToken)
         local lastX, lastY = nil, nil  -- track posisi terakhir, gerak hanya kalau berubah
 
         -- Pastikan di x=1 sebelum mulai break/place
-        local hb0 = getHitbox()
-        if hb0 then
+        do
             local cx, cy = getGridPos()
             if cx ~= 1 or cy ~= rowY then
-                local wx, wy = 1*4.5, rowY*4.5
-                hb0.CFrame = CFrame.new(wx, wy, hb0.Position.Z)
-                movementModule.Position = hb0.Position
-                pcall(function() MovPacket:FireServer(wx, wy) end)
-                task.wait(0.1)
+                walkTo(1, rowY, StatusLabel, "Ke x=1")
             end
         end
 
