@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v5 - 04 Mar 2026\n- Fix grid geser: formula OriginGrid sekarang konsisten pakai /4.5\n- Fix tidak balik: simpan posisi sebelum collect, balik ke sana (bukan origin)\n- Fix freeze: blacklist cache O(1) per node\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v6 - 04 Mar 2026\n- Fix collect & drop: simpan posisi sebelum jalan, balik ke sana persis\n- Fix grid geser: formula konsisten /4.5\n- Fix freeze: blacklist cache O(1)\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -931,6 +931,10 @@ return function(SubTab, Window, myToken)
                         local currentAmount = GetDropItemAmount()
 
                         if currentAmount > DropSettings.MaxStack then
+                            -- Simpan posisi sebelum jalan ke drop point
+                            local dropReturnX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                            local dropReturnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
                             WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
 
@@ -941,8 +945,25 @@ return function(SubTab, Window, myToken)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
-                            DropStatusLabel:SetText(string.format("Drop: Balik ke Origin (%d,%d)...", baseGrid.x, baseGrid.y))
-                            WalkBackFromDrop(Hitbox, baseGrid)
+                            -- Balik ke posisi sebelum drop, bukan baseGrid
+                            DropStatusLabel:SetText(string.format("Drop: Balik ke posisi awal (%d,%d)...", dropReturnX, dropReturnY))
+                            local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                            local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+                            local path = findSmartPathDrop(sx, sy, dropReturnX, dropReturnY)
+                            if path then
+                                for i, point in ipairs(path) do
+                                    if _G.LatestRunToken ~= myToken or not PnB.Master then break end
+                                    DropStatusLabel:SetText(string.format("Drop: Balik (%d/%d)...", i, #path))
+                                    Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
+                                    movementModule.Position = Hitbox.Position
+                                    task.wait(getgenv().StepDelay)
+                                end
+                            else
+                                Hitbox.CFrame = CFrame.new(dropReturnX * 4.5, dropReturnY * 4.5, Hitbox.Position.Z)
+                                movementModule.Position = Hitbox.Position
+                                task.wait(0.2)
+                            end
+                            DropStatusLabel:SetText("Drop Status: Idle")
                         else
                             DropStatusLabel:SetText(string.format("Drop: Skip (Jumlah: %d/%d)", currentAmount, DropSettings.MaxStack))
                         end
