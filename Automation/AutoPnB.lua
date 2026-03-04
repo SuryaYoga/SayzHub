@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v14 - 04 Mar 2026\n- Fix facing: pakai VirtualInputManager:SendKeyEvent (A/D) sebelum drop\n- Item jatuh ke arah yang benar\n- SmartCollect dimatikan sementara saat balik dari drop\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v15 - 04 Mar 2026\n- Fix drop sembarangan: cek posisi setelah jalan path sebelum lanjut drop\n- Fix facing: VirtualInputManager A/D sebelum drop\n- SmartCollect dimatikan saat balik dari drop\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -682,6 +682,10 @@ return function(SubTab, Window, myToken)
                 movementModule.Position = Hitbox.Position
                 task.wait(getgenv().StepDelay)
             end
+            -- Cek setelah jalan - kalau sudah sampai langsung break
+            local ax = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+            local ay = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+            if ax == targetX and ay == targetY then break end
             retry = retry + 1
         end
     end
