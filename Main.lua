@@ -2,11 +2,10 @@
 _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 local myToken = _G.LatestRunToken
 
--- Anti-AFK: simulasi input tiap 4 menit, tidak bergantung event Idled
+-- Anti-AFK: simulasi tap tiap 10 menit, work di PC & Android
 local function InitAntiAFK()
     local VirtualUser = game:GetService("VirtualUser")
 
-    -- Stop loop lama kalau ada
     if _G.AFKThread then
         task.cancel(_G.AFKThread)
         _G.AFKThread = nil
@@ -14,11 +13,12 @@ local function InitAntiAFK()
 
     _G.AFKThread = task.spawn(function()
         while _G.LatestRunToken == myToken do
-            task.wait(600) -- tiap 10 menit
+            task.wait(600)
             if _G.LatestRunToken ~= myToken then break end
             pcall(function()
                 VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
+                VirtualUser:ClickButton1(Vector2.new(0, 0), CFrame.new())
+                task.wait(0.1)
             end)
         end
     end)
