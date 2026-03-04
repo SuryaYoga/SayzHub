@@ -323,7 +323,7 @@ return function(SubTab, Window, myToken)
                     movementModule.Position = hb.Position
                     pcall(function() MovPacket:FireServer(wx, wy) end)
                 end
-                task.wait(0.05)
+                task.wait(0.1)
             end
             local ax, ay = getGridPos()
             if ax == tx and ay == ty then break end
