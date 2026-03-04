@@ -307,9 +307,11 @@ return function(SubTab, Window, myToken)
                 -- Fallback teleport
                 local hb = getHitbox()
                 if hb then
-                    hb.CFrame = CFrame.new(tx*4.5, ty*4.5, hb.Position.Z)
+                    local wx, wy = tx*4.5, ty*4.5
+                    hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
                     movementModule.Position = hb.Position
-                    task.wait(0.2)
+                    pcall(function() MovPacket:FireServer(wx, wy) end)
+                    task.wait(0.1)
                 end
                 break
             end
@@ -649,7 +651,7 @@ return function(SubTab, Window, myToken)
                         hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
                         movementModule.Position = hb.Position
                         pcall(function() MovPacket:FireServer(wx, wy) end)
-                        task.wait(0.05)
+                        task.wait(0.1)
                     end
                 else
                     -- Bersih → place langsung (tidak perlu gerak)
