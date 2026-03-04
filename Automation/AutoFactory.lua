@@ -584,14 +584,17 @@ return function(SubTab, Window, myToken)
                     if dist < nearestDist then nearestDist = dist; nearest = d end
                 end
                 if nearest then
-                    -- Hanya gerak kalau posisi target berbeda dari posisi terakhir
                     if lastX ~= nearest.x or lastY ~= nearest.y then
                         local wx, wy = nearest.x*4.5, nearest.y*4.5
                         hb.CFrame = CFrame.new(wx, wy, hb.Position.Z)
                         movementModule.Position = hb.Position
                         pcall(function() MovPacket:FireServer(wx, wy) end)
                         lastX, lastY = nearest.x, nearest.y
-                        task.wait(0.1)
+                        -- Tunggu item ke-collect (cek tiap 0.1s max 0.5s)
+                        for _ = 1, 5 do
+                            task.wait(0.1)
+                            if not nearest.item or not nearest.item.Parent then break end
+                        end
                     else
                         -- Posisi sama tapi item masih ada = stuck
                         badItemsPnB[nearest.item] = true
