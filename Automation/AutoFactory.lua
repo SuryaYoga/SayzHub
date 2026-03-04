@@ -153,7 +153,7 @@ return function(SubTab, Window, myToken)
     local StepLabel   = SubTab:AddLabel("Fase: -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "AutoFactory v6 - 04 Mar 2026\n- Fix first start: kalau ada sapling saat pertama start, tunggu delay dulu\n- Tombol Harvest Sekarang untuk skip delay\n- Countdown real-time\n- Loop fleksibel")
+    SubTab:AddParagraph("Versi", "AutoFactory v7 - 04 Mar 2026\n- Fix PnB lambat: collect drop dulu sampai bersih sebelum place\n- Urutan: collect drop → place → tunggu konfirmasi → break → ulang\n- Break langsung tanpa collect (drop collect saat break)")
     SubTab:AddLabel("1. Berdiri di baris Y yang mau di-farm.")
     SubTab:AddLabel("2. Aktifkan Master → Y otomatis tersimpan.")
     SubTab:AddLabel("3. Scan ID Seed dan ID Block PnB.")
@@ -552,43 +552,65 @@ return function(SubTab, Window, myToken)
             return false
         end
 
+        -- Helper: collect semua drop di x=0-2 baris rowY sampai bersih
+        -- Collect drop di x=0-2 baris rowY, nearest first, sampai benar-benar bersih
+        local function collectNearPnB()
+            local hb = getHitbox()
+            if not hb then return end
+            local maxCycles = 30
+            local c = 0
+            while c < maxCycles do
+                if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
+                -- Kumpulkan semua drop di area x=0-2
+                local drops = {}
+                local container = workspace:FindFirstChild("Drops")
+                if container then
+                    for _, item in pairs(container:GetChildren()) do
+                        local itPos = item:GetPivot().Position
+                        local itX = math.floor(itPos.X / 4.5 + 0.5)
+                        local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                        if itY == rowY and itX >= 0 and itX <= 2 then
+                            table.insert(drops, {item=item, x=itX, y=itY})
+                        end
+                    end
+                end
+                if #drops == 0 then break end
+                -- Ambil yang paling dekat
+                local nearest, nearestDist = nil, math.huge
+                for _, d in ipairs(drops) do
+                    local dx = hb.Position.X - d.item:GetPivot().Position.X
+                    local dy = hb.Position.Y - d.item:GetPivot().Position.Y
+                    local dist = math.sqrt(dx*dx + dy*dy)
+                    if dist < nearestDist then nearestDist = dist; nearest = d end
+                end
+                if nearest then
+                    hb.CFrame = CFrame.new(nearest.x*4.5, nearest.y*4.5, hb.Position.Z)
+                    movementModule.Position = hb.Position
+                    task.wait(0.05)
+                end
+                c = c + 1
+            end
+        end
+
         local cycleLimit = 300
         local cycle = 0
         while cycle < cycleLimit do
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
 
-            -- Pastikan di x=1 dulu sebelum aksi apapun
+            -- Pastikan di x=1
             if not ensureAtX1() then break end
 
             local tile = worldData[0] and worldData[0][rowY]
             local hasFg = tile and tile[1] ~= nil
 
-            if hasFg then
-                -- Ada block → BREAK
-                StepLabel:SetText("Fase: PnB [Break x=0]")
-                StatusLabel:SetText("Status: Break x=0...")
-                PlayerFist:FireServer(pnbPos)
-                task.wait(0.035)
+            if not hasFg then
+                -- Tile kosong → collect drop dulu sampai bersih, baru place
+                StepLabel:SetText("Fase: PnB [Collect drop]")
+                StatusLabel:SetText("Status: Collect drop sebelum place...")
+                collectNearPnB()
+                if not ensureAtX1() then break end
 
-                -- Collect drop kecil di dekat x=0
-                local hb = getHitbox()
-                if hb then
-                    local container = workspace:FindFirstChild("Drops")
-                    if container then
-                        for _, item in pairs(container:GetChildren()) do
-                            local itPos = item:GetPivot().Position
-                            local itX = math.floor(itPos.X / 4.5 + 0.5)
-                            local itY = math.floor(itPos.Y / 4.5 + 0.5)
-                            if itY == rowY and itX >= 0 and itX <= 2 then
-                                hb.CFrame = CFrame.new(itX*4.5, itY*4.5, hb.Position.Z)
-                                movementModule.Position = hb.Position
-                                task.wait(0.05)
-                            end
-                        end
-                    end
-                end
-            else
-                -- Kosong → PLACE
+                -- Place
                 StepLabel:SetText("Fase: PnB [Place x=0]")
                 StatusLabel:SetText("Status: Place x=0...")
                 local slotIdx, amt = getSlotByID(Factory.BlockID)
@@ -598,16 +620,20 @@ return function(SubTab, Window, myToken)
                 end
                 PlayerPlace:FireServer(pnbPos, slotIdx, 1)
 
-                -- Tunggu konfirmasi place (max 1.5 detik)
+                -- Tunggu ter-place (max 1 detik)
                 local placed = false
-                for _ = 1, 15 do
+                for _ = 1, 10 do
                     task.wait(0.1)
                     local t = worldData[0] and worldData[0][rowY]
                     if t and t[1] then placed = true break end
                 end
-
-                -- Kalau tidak ter-place = selesai (tidak ada block lagi)
-                if not placed then break end
+                if not placed then break end -- tidak ada block lagi = selesai
+            else
+                -- Ada block → BREAK langsung
+                StepLabel:SetText("Fase: PnB [Break x=0]")
+                StatusLabel:SetText("Status: Break x=0...")
+                PlayerFist:FireServer(pnbPos)
+                task.wait(0.035)
             end
 
             cycle = cycle + 1
