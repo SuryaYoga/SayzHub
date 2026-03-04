@@ -4,6 +4,7 @@ return function(Window)
     local ClearSub = OtomatisTab:AddSubTab("Auto Clear")
     local DropSub = OtomatisTab:AddSubTab("Auto Drop")
     local DFSub = OtomatisTab:AddSubTab("Auto Dirt Farm")
+    local FactorySub = OtomatisTab:AddSubTab("Auto Pabrik")
 
     -- Ambil token untuk memastikan loop di sub-modul bisa berhenti total
     local myToken = _G.LatestRunToken
@@ -56,6 +57,8 @@ return function(Window)
     LoadFitur("AutoClear.lua", ClearSub)
     LoadFitur("AutoDrop.lua", DropSub)
     LoadFitur("AutoDF.lua", DFSub)
+    LoadFitur("AutoFactory.lua", FactorySub)
 end
+
 
 
