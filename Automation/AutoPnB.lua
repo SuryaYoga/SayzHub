@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v2 - 04 Mar 2026\n- Fix: findSmartPath & findSmartPathDrop diupgrade ke A* (limit 10000)\n- Tidak freeze saat walkBack setelah collect")
+    SubTab:AddParagraph("Versi", "AutoPnB v3 - 04 Mar 2026\n- Fix UTAMA freeze: isWalkable tidak lagi loop workspace.Drops per node\n- Blacklist cache dibangun sekali sebelum pathfinding\n- A* parent pointer (tidak copy path)\n- baseGrid terkunci dari OriginGrid")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -311,6 +311,29 @@ return function(SubTab, Window, myToken)
     -- [4] SMART COLLECT CORE FUNCTIONS
     -- ========================================
 
+    -- Cache blacklist positions - dibangun sekali sebelum pathfinding, bukan per-node
+    -- Ini fix utama freeze: isWalkable tidak lagi loop workspace.Drops tiap node
+    local blacklistPosCache = {}
+    local function rebuildBlacklistCache()
+        blacklistPosCache = {}
+        local folders = {"Drops"}
+        if getgenv().TakeGems_PnB then table.insert(folders, "Gems") end
+        for _, folderName in pairs(folders) do
+            local container = workspace:FindFirstChild(folderName)
+            if container then
+                for _, item in pairs(container:GetChildren()) do
+                    local id = item:GetAttribute("id") or item.Name
+                    if getgenv().ItemBlacklist_PnB[id] then
+                        local itPos = item:GetPivot().Position
+                        local itX = math.floor(itPos.X / 4.5 + 0.5)
+                        local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                        blacklistPosCache[itX .. "," .. itY] = true
+                    end
+                end
+            end
+        end
+    end
+
     local function isWalkable(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
             return false, false
@@ -318,25 +341,7 @@ return function(SubTab, Window, myToken)
         if lockedDoors[gx .. "," .. gy] then
             return false, false
         end
-        local hasBlacklist = false
-        local folders = {"Drops"}
-        if getgenv().TakeGems_PnB then table.insert(folders, "Gems") end
-        for _, folderName in pairs(folders) do
-            local container = workspace:FindFirstChild(folderName)
-            if container then
-                for _, item in pairs(container:GetChildren()) do
-                    local itPos = item:GetPivot().Position
-                    local itX = math.floor(itPos.X / 4.5 + 0.5)
-                    local itY = math.floor(itPos.Y / 4.5 + 0.5)
-                    if itX == gx and itY == gy then
-                        local id = item:GetAttribute("id") or item.Name
-                        if getgenv().ItemBlacklist_PnB[id] then
-                            hasBlacklist = true
-                        end
-                    end
-                end
-            end
-        end
+        local hasBlacklist = blacklistPosCache[gx .. "," .. gy] or false
         if worldData[gx] and worldData[gx][gy] then
             local l1 = worldData[gx][gy][1]
             local itemName = (type(l1) == "table") and l1[1] or l1
@@ -501,6 +506,7 @@ return function(SubTab, Window, myToken)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
         local tx = math.floor(targetItem:GetPivot().Position.X / 4.5 + 0.5)
         local ty = math.floor(targetItem:GetPivot().Position.Y / 4.5 + 0.5)
+        rebuildBlacklistCache()
         local path = findSmartPath(sx, sy, tx, ty)
         if not path then
             badItems[targetItem] = true
@@ -529,6 +535,7 @@ return function(SubTab, Window, myToken)
     local function walkBackToOrigin(Hitbox, originGrid)
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+        rebuildBlacklistCache()
         local path = findSmartPath(sx, sy, originGrid.x, originGrid.y)
         if not path then return end
         for i, point in ipairs(path) do
