@@ -107,8 +107,8 @@ return function(SubTab, Window, myToken)
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
             PnB.OriginGrid = {
-                x = math.floor((root.Position.X / 4.475) + 0.5),
-                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+                x = math.floor(root.Position.X / 4.5 + 0.5),
+                y = math.floor(root.Position.Y / 4.5 + 0.5)
             }
         end
     end)
@@ -120,8 +120,8 @@ return function(SubTab, Window, myToken)
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if root then
             PnB.OriginGrid = {
-                x = math.floor((root.Position.X / 4.475) + 0.5),
-                y = math.floor(((root.Position.Y - 2.5) / 4.435) + 0.5)
+                x = math.floor(root.Position.X / 4.5 + 0.5),
+                y = math.floor(root.Position.Y / 4.5 + 0.5)
             }
             Window:Notify("Position Refreshed!", 2, "ok")
         end
@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v4 - 04 Mar 2026\n- Fix freeze: blacklist cache, bukan loop workspace per node\n- Fix tidak balik: walkBackToOrigin cari tile terdekat kalau origin terhalang, fallback teleport\n- A* parent pointer\n- baseGrid terkunci dari OriginGrid")
+    SubTab:AddParagraph("Versi", "AutoPnB v5 - 04 Mar 2026\n- Fix grid geser: formula OriginGrid sekarang konsisten pakai /4.5\n- Fix tidak balik: simpan posisi sebelum collect, balik ke sana (bukan origin)\n- Fix freeze: blacklist cache O(1) per node\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -532,23 +532,22 @@ return function(SubTab, Window, myToken)
         return true
     end
 
-    local function walkBackToOrigin(Hitbox, originGrid)
+    -- Balik ke posisi x,y yang diberikan (bukan originGrid — tapi posisi player sebelum collect)
+    local function walkBackToPos(Hitbox, targetX, targetY)
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
         local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-        if sx == originGrid.x and sy == originGrid.y then return end
+        if sx == targetX and sy == targetY then return end
 
-        -- Rebuild cache dulu (drop sudah di-collect, hapus dari cache)
         rebuildBlacklistCache()
+        local path = findSmartPath(sx, sy, targetX, targetY)
 
-        -- Coba smartpath dulu, kalau nil (origin terhalang block) coba cari tile walkable terdekat
-        local path = findSmartPath(sx, sy, originGrid.x, originGrid.y)
         if not path then
-            -- Cari tile walkable di sekitar origin (radius 1-3)
+            -- Cari tile walkable terdekat di sekitar target
             local found = false
             for radius = 1, 3 do
                 for dy = -radius, radius do
                     for dx = -radius, radius do
-                        local nx, ny = originGrid.x + dx, originGrid.y + dy
+                        local nx, ny = targetX + dx, targetY + dy
                         local w, _ = isWalkable(nx, ny)
                         if w then
                             path = findSmartPath(sx, sy, nx, ny)
@@ -562,9 +561,9 @@ return function(SubTab, Window, myToken)
         end
 
         if not path then
-            -- Fallback: teleport langsung ke origin
-            CollectStatusLabel:SetText("Collect: Teleport ke Origin...")
-            Hitbox.CFrame = CFrame.new(originGrid.x * 4.5, originGrid.y * 4.5, Hitbox.Position.Z)
+            -- Fallback teleport
+            CollectStatusLabel:SetText("Collect: Teleport balik...")
+            Hitbox.CFrame = CFrame.new(targetX * 4.5, targetY * 4.5, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             task.wait(0.2)
             return
@@ -866,11 +865,15 @@ return function(SubTab, Window, myToken)
                             return
                         end
 
+                        -- Simpan posisi player sebelum mulai collect
+                        local returnX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                        local returnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+
                         while _G.LatestRunToken == myToken and PnB.Master and getgenv().SmartCollect_Enabled do
                             local drops = getDropsInGrid(baseGrid)
                             if #drops == 0 then
-                                CollectStatusLabel:SetText("Collect: Done! Kembali ke Origin...")
-                                walkBackToOrigin(Hitbox, baseGrid)
+                                CollectStatusLabel:SetText("Collect: Done! Kembali ke posisi awal...")
+                                walkBackToPos(Hitbox, returnX, returnY)
                                 CollectStatusLabel:SetText("Collect: Idle")
                                 if getgenv().AutoDrop_PnB_Enabled then
                                     _G.LastPnBState = "Dropping"
