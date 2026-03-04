@@ -141,7 +141,7 @@ return function(SubTab, Window, myToken)
     local StepLabel   = SubTab:AddLabel("Fase: -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "AutoFactory v1 - 04 Mar 2026\n- Plant baris 1 baris Y\n- Tunggu delay lalu harvest\n- Collect semua drop di baris\n- PnB di x=0 baris sama\n- Auto Drop opsional")
+    SubTab:AddParagraph("Versi", "AutoFactory v2 - 04 Mar 2026\n- Plant: tunggu worldData konfirmasi sebelum pindah tile\n- Harvest: scan ulang Y, kanan→kiri menuju PnB\n- Collect dihapus: drop ke-collect otomatis saat jalan ke PnB\n- Auto Drop opsional")
     SubTab:AddLabel("1. Berdiri di baris Y yang mau di-farm.")
     SubTab:AddLabel("2. Aktifkan Master → Y otomatis tersimpan.")
     SubTab:AddLabel("3. Scan ID Seed dan ID Block PnB.")
@@ -370,6 +370,8 @@ return function(SubTab, Window, myToken)
     -- ========================================
 
     -- FASE 1: PLANT
+    -- Scan tile di rowY yang kosong & ada block di bawah → tanam
+    -- Tunggu worldData konfirmasi ada sapling sebelum pindah ke tile berikutnya
     local function doPlant(rowY)
         StepLabel:SetText("Fase: Plant")
         if not Factory.SeedID then
@@ -391,14 +393,32 @@ return function(SubTab, Window, myToken)
                 StatusLabel:SetText("Status: Seed habis!")
                 break
             end
+            -- Cek tile masih kosong
+            local tile = worldData[gx] and worldData[gx][rowY]
+            if tile and tile[1] then continue end -- sudah ada isi, skip
+
             walkTo(gx, rowY, StatusLabel, "Plant → X="..gx)
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-            -- Cek lagi tile kosong sebelum tanam
-            local tile = worldData[gx] and worldData[gx][rowY]
-            if not (tile and tile[1]) then
-                PlayerPlace:FireServer(Vector2.new(gx, rowY), slotIdx, 1)
+
+            -- Tanam lalu tunggu worldData konfirmasi ada sapling (max 2 detik)
+            slotIdx = getSlotByID(Factory.SeedID)
+            if not slotIdx then break end
+            PlayerPlace:FireServer(Vector2.new(gx, rowY), slotIdx, 1)
+
+            local confirmed = false
+            for _ = 1, 20 do -- max 2 detik (20 x 0.1)
+                task.wait(0.1)
+                local t = worldData[gx] and worldData[gx][rowY]
+                local fg = t and t[1]
+                local name = fg and (type(fg)=="table" and fg[1] or fg) or nil
+                if name then
+                    confirmed = true
+                    break
+                end
+            end
+
+            if confirmed then
                 table.insert(planted, gx)
-                task.wait(0.15)
             end
         end
 
@@ -418,16 +438,38 @@ return function(SubTab, Window, myToken)
     end
 
     -- FASE 3: HARVEST
+    -- Scan rowY untuk tile yang ada tanaman (sapling/crop dari planted list)
+    -- Harvest semua yang ketemu di baris itu
+    -- Setelah selesai langsung jalan ke x=1 (posisi PnB), drop ke-collect otomatis saat jalan
     local function doHarvest(rowY, plantedXs)
         StepLabel:SetText("Fase: Harvest")
+
+        -- Scan ulang dari worldData untuk tile yang masih ada tanaman di rowY
+        local toHarvest = {}
         for _, gx in ipairs(plantedXs) do
+            local tile = worldData[gx] and worldData[gx][rowY]
+            local fg = tile and tile[1]
+            local name = fg and (type(fg)=="table" and fg[1] or fg) or nil
+            if name then
+                table.insert(toHarvest, gx)
+            end
+        end
+
+        -- Harvest dari kanan ke kiri (menuju x=1 posisi PnB)
+        table.sort(toHarvest, function(a, b) return a > b end)
+
+        for _, gx in ipairs(toHarvest) do
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
             walkTo(gx, rowY, StatusLabel, "Harvest → X="..gx)
             if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-            -- Harvest = punch tile
             PlayerFist:FireServer(Vector2.new(gx, rowY))
             task.wait(0.1)
         end
+
+        -- Langsung jalan ke x=1 setelah harvest
+        -- Drop otomatis ke-collect sepanjang jalan
+        StatusLabel:SetText("Status: Jalan ke PnB, collect drop...")
+        walkTo(1, rowY, StatusLabel, "Ke PnB x=1")
         StatusLabel:SetText("Status: Harvest selesai")
     end
 
@@ -639,15 +681,11 @@ return function(SubTab, Window, myToken)
                     doHarvest(rowY, planted)
                     if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
 
-                    -- FASE 4: COLLECT DROP BARIS
-                    doCollect(rowY)
-                    if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
-
-                    -- FASE 5: PnB di x=0
+                    -- FASE 4: PnB di x=0
                     doPnB(rowY)
                     if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
 
-                    -- FASE 6: AUTO DROP
+                    -- FASE 5: AUTO DROP
                     doAutoDrop(rowY)
 
                     StatusLabel:SetText("Status: Siklus selesai, ulang...")
