@@ -50,18 +50,71 @@ return function(Window)
     local SinyalSub = BerandaTab:AddSubTab("Statistik")
 
     SinyalSub:AddSection("Koneksi & Jaringan")
-    local PingLabel = SinyalSub:AddLabel("Ping: -- ms")
-    local SinyalLabel = SinyalSub:AddLabel("Kualitas: --")
-    local RegionLabel = SinyalSub:AddLabel("Server ID: --")
+    local PingLabel    = SinyalSub:AddLabel("Ping: -- ms")
+    local SinyalLabel  = SinyalSub:AddLabel("Kualitas: --")
+    local RegionLabel  = SinyalSub:AddLabel("Server ID: --")
 
     SinyalSub:AddSection("Statistik Karakter")
     local PlayTimeLabel = SinyalSub:AddLabel("Waktu Bermain: 00:00:00")
-    local FPSLabel = SinyalSub:AddLabel("FPS: --")
-    local UserLabel = SinyalSub:AddLabel("User: " .. game.Players.LocalPlayer.Name)
+    local FPSLabel      = SinyalSub:AddLabel("FPS: --")
+    local UserLabel     = SinyalSub:AddLabel("User: " .. game.Players.LocalPlayer.Name)
 
     SinyalSub:AddSection("Aksi Server")
     SinyalSub:AddButton("Salin Link Server (JobId)", function()
         copyLink("JobId", "https://www.roblox.com/games/" .. game.PlaceId .. "?jobId=" .. game.JobId)
+    end)
+
+    -- ========================================
+    -- ANTI AFK
+    -- ========================================
+    SinyalSub:AddSection("Anti AFK")
+
+    local afkEnabled    = true  -- default ON
+    local lastAFKTime   = "Belum jalan"
+    local nextAFKIn     = 180   -- detik
+    local afkCountdown  = nextAFKIn
+
+    local AFKStatusLabel    = SinyalSub:AddLabel("Status    : Aktif")
+    local AFKLastLabel      = SinyalSub:AddLabel("Terakhir  : Belum jalan")
+    local AFKCountdownLabel = SinyalSub:AddLabel("Berikutnya: 03:00")
+
+    getgenv().SayzUI_Handles["AntiAFK"] = SinyalSub:AddToggle("Anti AFK", afkEnabled, function(t)
+        afkEnabled = t
+        AFKStatusLabel:SetText("Status    : " .. (t and "Aktif" or "Nonaktif"))
+        Window:Notify(t and "Anti AFK ON" or "Anti AFK OFF", 2, t and "ok" or "danger")
+    end)
+
+    -- Anti AFK loop
+    task.spawn(function()
+        local VirtualUser = game:GetService("VirtualUser")
+        while _G.LatestRunToken == myToken do
+            task.wait(1)
+            if afkEnabled then
+                afkCountdown = afkCountdown - 1
+                -- Update countdown label
+                local m = math.floor(afkCountdown / 60)
+                local s = afkCountdown % 60
+                AFKCountdownLabel:SetText(string.format("Berikutnya: %02d:%02d", m, s))
+
+                if afkCountdown <= 0 then
+                    -- Jalankan anti afk
+                    pcall(function()
+                        VirtualUser:CaptureController()
+                        VirtualUser:ClickButton1(Vector2.new(0, 0), CFrame.new())
+                        task.wait(0.1)
+                    end)
+                    -- Update label terakhir
+                    local t2 = os.date("%H:%M:%S")
+                    AFKLastLabel:SetText("Terakhir  : " .. t2)
+                    -- Reset countdown
+                    afkCountdown = nextAFKIn
+                end
+            else
+                -- Kalau nonaktif reset countdown
+                afkCountdown = nextAFKIn
+                AFKCountdownLabel:SetText(string.format("Berikutnya: %02d:%02d", math.floor(nextAFKIn/60), nextAFKIn%60))
+            end
+        end
     end)
 
     -- ========================================
