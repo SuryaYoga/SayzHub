@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v10 - 04 Mar 2026\n- Fix WalkToDropPoint: retry loop + fallback teleport\n- Fix walkback collect & drop: retry loop\n- Fix isWalkableDrop solid\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v13 - 04 Mar 2026\n- Fix facing: pakai movementModule.MoveX (-1=kiri, 1=kanan) sebelum drop\n- Item jatuh ke arah drop point, tidak menghalangi jalur balik\n- SmartCollect dimatikan sementara saat balik dari drop\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -898,12 +898,28 @@ return function(SubTab, Window, myToken)
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
                             WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
 
+                            -- Hadapkan karakter ke arah drop point sebelum drop
+                            -- supaya item jatuh ke arah drop point, tidak ke jalur balik
+                            do
+                                -- MoveX: -1 = kiri, 1 = kanan
+                                local faceDir = (DropSettings.DropPoint.x < dropReturnX) and -1 or 1
+                                movementModule.MoveX = faceDir
+                                task.wait(0.1)
+                            end
+
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
                             local uiSnapshot = SnapshotUI()
                             DoDropAll(uiSnapshot)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
+
+                            -- Tunggu sebentar supaya item drop tidak langsung ke-collect
+                            task.wait(0.5)
+
+                            -- Sementara matikan SmartCollect saat balik supaya tidak ngambil item drop lagi
+                            local prevSmartCollect = getgenv().SmartCollect_Enabled
+                            getgenv().SmartCollect_Enabled = false
 
                             -- Balik ke posisi sebelum drop, retry sampai sampai
                             local dropMaxRetry = 5
@@ -929,6 +945,12 @@ return function(SubTab, Window, myToken)
                                     task.wait(getgenv().StepDelay)
                                 end
                                 dropRetry = dropRetry + 1
+                            end
+
+                            -- Restore SmartCollect
+                            getgenv().SmartCollect_Enabled = prevSmartCollect
+                            if getgenv().SayzUI_Handles["SmartCollect_PnB"] then
+                                getgenv().SayzUI_Handles["SmartCollect_PnB"]:Set(prevSmartCollect)
                             end
                             DropStatusLabel:SetText("Drop Status: Idle")
                         else
