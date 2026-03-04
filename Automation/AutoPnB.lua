@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v12 - 04 Mar 2026\n- Fix drop di posisi salah: WalkToDropPoint return posisi aktual\n- Cek tile drop point sendiri walkable + enclosed\n- Drop acak di dekat drop point (bukan PnB) kalau tertutup\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v13 - 04 Mar 2026\n- Fix tidak balik ke PnB: dropReturnX/Y tidak dioverwrite setelah WalkToDropPoint\n- Drop acak di dekat drop point kalau tertutup\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. [Opsional] Smart Collect: ambil item drop otomatis.")
     SubTab:AddLabel("   ⚠️ Wajib aktifkan Lock Position jika pakai Smart Collect!")
@@ -946,16 +946,12 @@ return function(SubTab, Window, myToken)
                         local currentAmount = GetDropItemAmount()
 
                         if currentAmount > DropSettings.MaxStack then
-                            -- Simpan posisi sebelum jalan ke drop point
+                            -- Simpan posisi PnB sebelum jalan ke drop point - jangan dioverwrite
                             local dropReturnX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
                             local dropReturnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
 
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
-                            local actualDropX, actualDropY = WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
-                            -- Update dropReturnX/Y ke posisi aktual bot setelah WalkToDropPoint
-                            -- (bisa beda kalau drop point tertutup dan diganti ke tile terdekat)
-                            dropReturnX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-                            dropReturnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+                            WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
