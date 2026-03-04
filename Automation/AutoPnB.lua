@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v6 - 04 Mar 2026\n- Fix collect & drop: simpan posisi sebelum jalan, balik ke sana persis\n- Fix grid geser: formula konsisten /4.5\n- Fix freeze: blacklist cache O(1)\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v7 - 04 Mar 2026\n- Fix isWalkableDrop: semua block solid, kecuali door/frame/sapling\n- Fix collect & drop: balik ke posisi sebelum jalan\n- Fix freeze: blacklist cache O(1)\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -347,7 +347,7 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                if string.find(n, "door") or string.find(n, "frame") then
+                if string.find(n, "door") or string.find(n, "frame") or string.find(n, "sapling") then
                     return true, hasBlacklist
                 end
                 return false, false
@@ -356,6 +356,8 @@ return function(SubTab, Window, myToken)
         return true, hasBlacklist
     end
 
+    -- Sama logikanya dengan isWalkable AutoDF:
+    -- block apapun = tidak walkable, KECUALI door/frame/sapling
     local function isWalkableDrop(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
             return false
@@ -366,12 +368,10 @@ return function(SubTab, Window, myToken)
             local itemName = (type(l1) == "table") and l1[1] or l1
             if itemName then
                 local n = string.lower(tostring(itemName))
-                local SOLID_TILES = {
-                    bedrock = true, dirt = true, stone = true,
-                    gravel = true, small_lock = true,
-                }
-                if SOLID_TILES[n] then return false end
-                return true
+                if string.find(n, "door") or string.find(n, "frame") or string.find(n, "sapling") then
+                    return true
+                end
+                return false  -- semua block lain tidak bisa dilewati
             end
         end
         return true
