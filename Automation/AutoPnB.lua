@@ -21,7 +21,6 @@ return function(SubTab, Window, myToken)
     pcall(function() InventoryMod = require(ReplicatedStorage.Modules.Inventory) end)
 
     -- State machine state
-    -- States: "Breaking" → "Collecting" → "Dropping" → "Placing" → "Waiting"
     _G.LastPnBState = "Waiting"
 
     -- Smart Collect globals
@@ -40,7 +39,6 @@ return function(SubTab, Window, myToken)
         KeepAmount  = 200,
         DropDelay   = 0.5,
         DropPoint   = nil,
-        -- ReturnPoint TIDAK ada — otomatis pakai PnB.OriginGrid
     }
 
     local LIMIT = { MIN_X = 0, MAX_X = 100, MIN_Y = 6, MAX_Y = 60 }
@@ -52,15 +50,11 @@ return function(SubTab, Window, myToken)
     -- [2] UI ELEMENTS
     -- ========================================
 
-    -- ─────────────────────────────────────────
-    -- SEKSI 1: EKSEKUSI
-    -- ─────────────────────────────────────────
     SubTab:AddSection("EKSEKUSI")
     getgenv().SayzUI_Handles["PnB_Master"]    = SubTab:AddToggle("Master Switch",  PnB.Master, function(t) PnB.Master = t end)
     getgenv().SayzUI_Handles["PnB_Break"]     = SubTab:AddToggle("Enable Break",   PnB.Break,  function(t) PnB.Break  = t end)
     getgenv().SayzUI_Handles["PnB_Place"]     = SubTab:AddToggle("Enable Place",   PnB.Place,  function(t) PnB.Place  = t end)
 
-    -- Scan item PnB (place) & stok info
     SubTab:AddButton("Scan ID Item (Pasang 1 Blok Manual)", function()
         PnB.Scanning = true
         Window:Notify("Pasang 1 blok manual untuk scan!", 3, "info")
@@ -68,9 +62,6 @@ return function(SubTab, Window, myToken)
     local InfoLabel = SubTab:AddLabel("ID Aktif   : None")
     local StokLabel = SubTab:AddLabel("Total Stok : 0")
 
-    -- ─────────────────────────────────────────
-    -- SEKSI 2: SMART COLLECT
-    -- ─────────────────────────────────────────
     SubTab:AddSection("SMART COLLECT")
     getgenv().SayzUI_Handles["SmartCollect_PnB"] = SubTab:AddToggle("Enable Smart Collect (Setelah Break)", getgenv().SmartCollect_Enabled, function(t)
         getgenv().SmartCollect_Enabled = t
@@ -95,9 +86,6 @@ return function(SubTab, Window, myToken)
     end, 2)
     local CollectStatusLabel = SubTab:AddLabel("Collect Status: Idle")
 
-    -- ─────────────────────────────────────────
-    -- SEKSI 3: SETTING (PnB)
-    -- ─────────────────────────────────────────
     SubTab:AddSection("SETTING")
     getgenv().SayzUI_Handles["PnB_SpeedScale"] = SubTab:AddInput("Speed Scale (Min 0.1)", "1", function(v)
         local val = tonumber(v) or 1
@@ -136,9 +124,6 @@ return function(SubTab, Window, myToken)
         end
     end)
 
-    -- ─────────────────────────────────────────
-    -- SEKSI 4: AUTO DROP
-    -- ─────────────────────────────────────────
     SubTab:AddSection("AUTO DROP")
     getgenv().SayzUI_Handles["AutoDrop_PnB"] = SubTab:AddToggle("Enable Auto Drop (Setelah Collect)", getgenv().AutoDrop_PnB_Enabled, function(t)
         getgenv().AutoDrop_PnB_Enabled = t
@@ -220,36 +205,12 @@ return function(SubTab, Window, myToken)
     SubTab:AddLabel("↩ Return Point : Otomatis mengikuti Origin PnB")
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
-    -- ─────────────────────────────────────────
-    -- SEKSI 5: PANDUAN PENGGUNAAN
-    -- ─────────────────────────────────────────
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddLabel("1. BREAK & PLACE saja:")
-    SubTab:AddLabel("   Aktifkan Master, Break, dan Place.")
-    SubTab:AddLabel("   Bot akan break semua tile → lalu place ulang")
-    SubTab:AddLabel("   sampai penuh → ulangi terus menerus.")
-    SubTab:AddLabel("")
-    SubTab:AddLabel("2. Tambah SMART COLLECT:")
-    SubTab:AddLabel("   Aktifkan Smart Collect agar setelah break")
-    SubTab:AddLabel("   bot otomatis ambil semua item drop di area grid")
-    SubTab:AddLabel("   sebelum mulai place.")
-    SubTab:AddLabel("   Urutan: Break → Collect → Place")
-    SubTab:AddLabel("")
-    SubTab:AddLabel("3. Tambah AUTO DROP:")
-    SubTab:AddLabel("   Scan ID item yang ingin di-drop → set Drop Point")
-    SubTab:AddLabel("   (posisi tempat drop item) → atur Max Stack.")
-    SubTab:AddLabel("   Jika jumlah item > Max Stack, bot jalan ke Drop")
-    SubTab:AddLabel("   Point, drop sampai tersisa Keep Amount, lalu")
-    SubTab:AddLabel("   otomatis balik ke Origin PnB dan lanjut Place.")
-    SubTab:AddLabel("   Jika belum mencapai Max Stack, drop dilewati.")
-    SubTab:AddLabel("   Urutan: Break → Collect → Drop → Place")
-    SubTab:AddLabel("")
-    SubTab:AddLabel("TIPS:")
-    SubTab:AddLabel("   - Scan ID PnB: pasang 1 blok manual dulu.")
-    SubTab:AddLabel("   - Scan ID Drop: drop 1 item secara manual.")
-    SubTab:AddLabel("   - Gunakan Refresh Position sebelum mulai")
-    SubTab:AddLabel("     supaya Origin terkunci di posisi yang benar.")
-    SubTab:AddLabel("   - Lock Position agar Origin tidak bergeser")
+    SubTab:AddParagraph("Versi", "AutoPnB v2 - 04 Mar 2026\n- Fix: findSmartPath & findSmartPathDrop diupgrade ke A* (limit 10000)\n- Tidak freeze saat walkBack setelah collect")
+    SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
+    SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
+    SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
+    SubTab:AddLabel("Urutan: Break → Collect → Drop → Place")
 
     -- ========================================
     -- [3] HELPER FUNCTIONS
@@ -270,7 +231,6 @@ return function(SubTab, Window, myToken)
         return total
     end
 
-    -- Cari slot index fresh berdasarkan string ID (dipanggil tiap mau place)
     local function getSlotByPnBID()
         if not InventoryMod or not InventoryMod.Stacks then return nil end
         for slotIndex, data in pairs(InventoryMod.Stacks) do
@@ -294,7 +254,6 @@ return function(SubTab, Window, myToken)
         pcall(function()
             if DropSettings.TargetID then
                 DropScanLabel:SetText("Drop Target ID : " .. tostring(DropSettings.TargetID))
-                -- Hitung jumlah drop target
                 local total = 0
                 if InventoryMod and InventoryMod.Stacks then
                     for _, data in pairs(InventoryMod.Stacks) do
@@ -310,26 +269,22 @@ return function(SubTab, Window, myToken)
         end)
     end
 
-    -- Hook Scanner (PnB item scan + Drop item scan)
     if not _G.OldHookSet then
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
             local args = {...}
-            -- PnB scanner (place item)
-            -- args[1] = Vector2 pos, args[2] = slot index
             if _G.LatestRunToken == myToken and PnB.Scanning and self.Name == "PlayerPlaceItem" and method == "FireServer" then
                 local slotIndex = args[2]
                 if slotIndex and InventoryMod and InventoryMod.Stacks then
                     local data = InventoryMod.Stacks[slotIndex]
                     if data and data.Id then
-                        PnB.TargetID = tostring(data.Id)  -- simpan string ID stabil, bukan slot index
+                        PnB.TargetID = tostring(data.Id)
                         PnB.Scanning = false
                         Window:Notify("ID Scanned: " .. PnB.TargetID, 2, "ok")
                     end
                 end
             end
-            -- Drop scanner (drop item)
             if _G.LatestRunToken == myToken and DropSettings.Scanning and method == "FireServer" then
                 if self == PlayerDrop then
                     local slotIndex = args[1]
@@ -393,14 +348,11 @@ return function(SubTab, Window, myToken)
         return true, hasBlacklist
     end
 
-    -- isWalkable versi drop (tanpa blacklist item, tidak perlu berat)
     local function isWalkableDrop(gx, gy)
         if gx < LIMIT.MIN_X or gx > LIMIT.MAX_X or gy < LIMIT.MIN_Y or gy > LIMIT.MAX_Y then
             return false
         end
-        if lockedDoors[gx .. "," .. gy] then
-            return false
-        end
+        if lockedDoors[gx .. "," .. gy] then return false end
         if worldData[gx] and worldData[gx][gy] then
             local l1 = worldData[gx][gy][1]
             local itemName = (type(l1) == "table") and l1[1] or l1
@@ -417,39 +369,37 @@ return function(SubTab, Window, myToken)
         return true
     end
 
+    -- A* pathfinding untuk SmartCollect (ganti Dijkstra lama yang freeze)
     local function findSmartPath(startX, startY, targetX, targetY)
-        local queue = {{x = startX, y = startY, path = {}, cost = 0}}
-        local visited = {[startX .. "," .. startY] = 0}
-        local directions = {
-            {x = 1, y = 0}, {x = -1, y = 0},
-            {x = 0, y = 1}, {x = 0, y = -1}
-        }
-        local limitCount = 0
+        local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
+        local startKey = startX .. "," .. startY
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), path={}}}
+        local visited = {[startKey] = 0}
+        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
-            limitCount = limitCount + 1
-            if limitCount > 4000 then break end
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then
-                return current.path
+            limit = limit + 1
+            if limit > 10000 then break end
+            -- Ambil node dengan f terkecil (tanpa table.sort penuh)
+            local minIdx, minF = 1, queue[1].f
+            for i = 2, #queue do
+                if queue[i].f < minF then minF = queue[i].f; minIdx = i end
             end
-            for _, d in ipairs(directions) do
-                local nx, ny = current.x + d.x, current.y + d.y
+            local cur = table.remove(queue, minIdx)
+            if cur.x == targetX and cur.y == targetY then return cur.path end
+            for _, d in ipairs(dirs) do
+                local nx, ny = cur.x + d.x, cur.y + d.y
+                local nkey   = nx .. "," .. ny
                 local walkable, isBlacklisted = isWalkable(nx, ny)
                 if walkable then
                     local moveCost = isBlacklisted and getgenv().AvoidanceStrength or 1
-                    local newTotalCost = current.cost + moveCost
-                    if not visited[nx .. "," .. ny] or newTotalCost < visited[nx .. "," .. ny] then
-                        visited[nx .. "," .. ny] = newTotalCost
-                        local newPath = {unpack(current.path)}
+                    local ng = cur.g + moveCost
+                    if not visited[nkey] or ng < visited[nkey] then
+                        visited[nkey] = ng
+                        local newPath = {table.unpack(cur.path)}
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {
-                            x = nx,
-                            y = ny,
-                            path = newPath,
-                            cost = newTotalCost
-                        })
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), path=newPath})
                     end
                 end
             end
@@ -457,38 +407,34 @@ return function(SubTab, Window, myToken)
         return nil
     end
 
-    -- findSmartPath versi drop (cost flat, pakai isWalkableDrop)
+    -- A* pathfinding untuk AutoDrop
     local function findSmartPathDrop(startX, startY, targetX, targetY)
-        local queue = {{x = startX, y = startY, path = {}, cost = 0}}
-        local visited = {[startX .. "," .. startY] = 0}
-        local directions = {
-            {x = 1, y = 0}, {x = -1, y = 0},
-            {x = 0, y = 1}, {x = 0, y = -1}
-        }
-        local limitCount = 0
+        local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
+        local startKey = startX .. "," .. startY
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), path={}}}
+        local visited = {[startKey] = 0}
+        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
-            limitCount = limitCount + 1
-            if limitCount > 4000 then break end
-            table.sort(queue, function(a, b) return a.cost < b.cost end)
-            local current = table.remove(queue, 1)
-            if current.x == targetX and current.y == targetY then
-                return current.path
+            limit = limit + 1
+            if limit > 10000 then break end
+            local minIdx, minF = 1, queue[1].f
+            for i = 2, #queue do
+                if queue[i].f < minF then minF = queue[i].f; minIdx = i end
             end
-            for _, d in ipairs(directions) do
-                local nx, ny = current.x + d.x, current.y + d.y
+            local cur = table.remove(queue, minIdx)
+            if cur.x == targetX and cur.y == targetY then return cur.path end
+            for _, d in ipairs(dirs) do
+                local nx, ny = cur.x + d.x, cur.y + d.y
+                local nkey   = nx .. "," .. ny
                 if isWalkableDrop(nx, ny) then
-                    local newCost = current.cost + 1
-                    if not visited[nx .. "," .. ny] or newCost < visited[nx .. "," .. ny] then
-                        visited[nx .. "," .. ny] = newCost
-                        local newPath = {unpack(current.path)}
+                    local ng = cur.g + 1
+                    if not visited[nkey] or ng < visited[nkey] then
+                        visited[nkey] = ng
+                        local newPath = {table.unpack(cur.path)}
                         table.insert(newPath, Vector3.new(nx * 4.5, ny * 4.5, 0))
-                        table.insert(queue, {
-                            x = nx,
-                            y = ny,
-                            path = newPath,
-                            cost = newCost
-                        })
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), path=newPath})
                     end
                 end
             end
@@ -684,7 +630,6 @@ return function(SubTab, Window, myToken)
         RestoreUIFromSnapshot(snapshot)
     end
 
-    -- Jalan ke Drop Point menggunakan findSmartPathDrop (retry saat stuck)
     local function WalkToDropPoint(Hitbox, targetX, targetY)
         local startZ = Hitbox.Position.Z
         local maxRetry = 10
@@ -720,7 +665,6 @@ return function(SubTab, Window, myToken)
         end
     end
 
-    -- Balik ke Origin dari Drop Point (pakai findSmartPathDrop juga)
     local function WalkBackFromDrop(Hitbox, originGrid)
         local startZ = Hitbox.Position.Z
         local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
@@ -759,8 +703,7 @@ return function(SubTab, Window, myToken)
     end)
 
     -- ========================================
-    -- [7] MAIN LOOP — STRICT STATE MACHINE
-    -- Break → Collecting → Dropping → Placing → Waiting
+    -- [7] MAIN LOOP
     -- ========================================
     task.spawn(function()
         while _G.LatestRunToken == myToken do
@@ -815,9 +758,7 @@ return function(SubTab, Window, myToken)
                     local areaData, filledCount = getAreaInfo()
                     local maxTiles = #areaData
 
-                    -- ==========================
                     -- SIKLUS 1: BREAK
-                    -- ==========================
                     if PnB.Break and filledCount > 0 then
                         if filledCount == maxTiles or _G.LastPnBState == "Breaking" or _G.LastPnBState == "Waiting" or (not PnB.Place) then
                             _G.LastPnBState = "Breaking"
@@ -862,13 +803,10 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    -- ==========================
                     -- SIKLUS 2: SMART COLLECT
-                    -- ==========================
                     if _G.LastPnBState == "Collecting" and getgenv().SmartCollect_Enabled then
                         local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
                         if not Hitbox then
-                            -- Tanpa hitbox, skip langsung ke drop / place
                             if getgenv().AutoDrop_PnB_Enabled then
                                 _G.LastPnBState = "Dropping"
                             else
@@ -883,7 +821,6 @@ return function(SubTab, Window, myToken)
                                 CollectStatusLabel:SetText("Collect: Done! Kembali ke Origin...")
                                 walkBackToOrigin(Hitbox, baseGrid)
                                 CollectStatusLabel:SetText("Collect: Idle")
-                                -- Setelah collect selesai, cek apakah perlu drop
                                 if getgenv().AutoDrop_PnB_Enabled then
                                     _G.LastPnBState = "Dropping"
                                 else
@@ -917,15 +854,10 @@ return function(SubTab, Window, myToken)
                         return
                     end
 
-                    -- ==========================
                     -- SIKLUS 3: AUTO DROP
-                    -- Hanya jalan ke drop point jika amount > MaxStack
-                    -- Return Point = PnB.OriginGrid (otomatis)
-                    -- ==========================
                     if _G.LastPnBState == "Dropping" and getgenv().AutoDrop_PnB_Enabled then
                         local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
 
-                        -- Cek syarat dasar
                         if not DropSettings.TargetID then
                             DropStatusLabel:SetText("Drop: Scan ID dulu!")
                             _G.LastPnBState = "Placing"
@@ -944,25 +876,20 @@ return function(SubTab, Window, myToken)
 
                         local currentAmount = GetDropItemAmount()
 
-                        -- Cek apakah target drop tercapai
                         if currentAmount > DropSettings.MaxStack then
-                            -- [1] Jalan ke Drop Point
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
                             WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
-                            -- [2] Eksekusi drop
                             local uiSnapshot = SnapshotUI()
                             DoDropAll(uiSnapshot)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
-                            -- [3] Balik ke Origin PnB (bukan Return Point manual — otomatis)
                             DropStatusLabel:SetText(string.format("Drop: Balik ke Origin (%d,%d)...", baseGrid.x, baseGrid.y))
                             WalkBackFromDrop(Hitbox, baseGrid)
                         else
-                            -- Amount tidak cukup untuk drop, langsung lanjut Place
                             DropStatusLabel:SetText(string.format("Drop: Skip (Jumlah: %d/%d)", currentAmount, DropSettings.MaxStack))
                         end
 
@@ -970,9 +897,7 @@ return function(SubTab, Window, myToken)
                         return
                     end
 
-                    -- ==========================
                     -- SIKLUS 4: PLACE
-                    -- ==========================
                     if PnB.Place and maxTiles > 0 then
                         areaData, filledCount = getAreaInfo()
                         if filledCount < maxTiles and (_G.LastPnBState == "Placing" or _G.LastPnBState == "Waiting") then
@@ -981,7 +906,6 @@ return function(SubTab, Window, myToken)
                                 for _, tile in ipairs(areaData) do
                                     if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     if not tile.isFilled and PnB.Master then
-                                        -- Cari slot index fresh tiap iterasi agar tidak salah item
                                         local slotIndex = getSlotByPnBID()
                                         if slotIndex then
                                             game.ReplicatedStorage.Remotes.PlayerPlaceItem:FireServer(tile.pos, slotIndex, 1)
@@ -998,7 +922,6 @@ return function(SubTab, Window, myToken)
                         end
                     end
 
-                    -- Handle kondisi hanya Break tanpa Place
                     if PnB.Break and not PnB.Place then
                         areaData, filledCount = getAreaInfo()
                         if filledCount == 0 and _G.LastPnBState ~= "Collecting" and _G.LastPnBState ~= "Dropping" then
