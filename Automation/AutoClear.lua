@@ -20,15 +20,37 @@ return function(SubTab, Window, myToken)
     local OFFSET_Y    = -0.249640
 
     -- ========================================
-    -- [2] HELPERS
+    -- [1] HELPERS
     -- ========================================
+
+    local function getHitbox()
+        return workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+    end
+
+    local function worldPos(gx, gy)
+        return gx * GRID_SIZE, gy * GRID_SIZE + OFFSET_Y
+    end
+
+    local function getGridPos()
+        local Hitbox = getHitbox()
+        if not Hitbox then return 0, 0 end
+        local gx = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5)
+        local gy = math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+        return gx, gy
+    end
+
+    local function isAtPosition(gx, gy)
+        local cx, cy = getGridPos()
+        return cx == gx and cy == gy
+    end
 
     local function shouldSkip(itemName)
         if not itemName then return false end
         local n = string.lower(tostring(itemName))
-        if string.find(n, "lock") then return true end
-        if string.find(n, "door") then return true end
-        if n == "bedrock"         then return true end
+        if string.find(n, "lock")         then return true end
+        if string.find(n, "door")         then return true end
+        if n == "bedrock"                 then return true end
+        if string.find(n, "wooden_frame") then return true end
         return false
     end
 
@@ -46,6 +68,10 @@ return function(SubTab, Window, myToken)
             end
         end
         return false
+    end
+
+    local function canAccess(gx, gy)
+        return not isLockArea(gx, gy)
     end
 
     local function getTileLayers(gx, gy)
@@ -77,24 +103,21 @@ return function(SubTab, Window, myToken)
         return topY
     end
 
-    local function isAtPosition(gx, gy)
-        local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        if not char then return false end
-        local cx = math.floor(char.Position.X / GRID_SIZE + 0.5)
-        local cy = math.floor((char.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
-        return cx == gx and cy == gy
-    end
-
     -- ========================================
-    -- [3] PATHFINDING
+    -- [2] PATHFINDING (A* sama seperti AutoDF)
     -- ========================================
 
     local function isWalkable(gx, gy)
         if gx < WORLD_MIN_X or gx > WORLD_MAX_X or gy < WORLD_MIN_Y or gy > WORLD_MAX_Y then
             return false
         end
-        if isLockArea(gx, gy) then return false end
+        if isLockArea(gx, gy) and not canAccess(gx, gy) then return false end
         if worldData[gx] and worldData[gx][gy] and worldData[gx][gy][1] ~= nil then
+            local l1 = worldData[gx][gy][1]
+            local n  = string.lower(tostring((type(l1) == "table") and l1[1] or l1))
+            if string.find(n, "sapling") then return true end
+            if string.find(n, "door")    then return true end
+            -- lock dan block lain tidak bisa dilewati
             return false
         end
         return true
@@ -102,44 +125,38 @@ return function(SubTab, Window, myToken)
 
     local function findSmartPath(startX, startY, targetX, targetY)
         local startKey = startX .. "," .. startY
-        local queue    = {{x=startX, y=startY, cost=0, parent=nil}}
-        local visited  = {[startKey] = 0}
-        local dirs     = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
-        local found    = nil
-        local limit    = 0
-
+        -- A* dengan heuristic Manhattan distance
+        local function h(x, y) return math.abs(x - targetX) + math.abs(y - targetY) end
+        local queue   = {{x=startX, y=startY, g=0, f=h(startX,startY), parent=nil}}
+        local visited = {[startKey] = 0}
+        local dirs    = {{x=1,y=0},{x=-1,y=0},{x=0,y=1},{x=0,y=-1}}
+        local found   = nil
+        local limit   = 0
         while #queue > 0 do
             if _G.LatestRunToken ~= myToken then break end
             limit = limit + 1
-            if limit > 4000 then break end
-
-            local minIdx, minCost = 1, queue[1].cost
+            if limit > 10000 then break end
+            local minIdx, minF = 1, queue[1].f
             for i = 2, #queue do
-                if queue[i].cost < minCost then
-                    minCost = queue[i].cost
-                    minIdx  = i
+                if queue[i].f < minF then
+                    minF   = queue[i].f
+                    minIdx = i
                 end
             end
             local cur = table.remove(queue, minIdx)
-
-            if cur.x == targetX and cur.y == targetY then
-                found = cur
-                break
-            end
-
+            if cur.x == targetX and cur.y == targetY then found = cur break end
             for _, d in ipairs(dirs) do
                 local nx, ny = cur.x + d.x, cur.y + d.y
                 local nkey   = nx .. "," .. ny
                 if isWalkable(nx, ny) then
-                    local nc = cur.cost + 1
-                    if not visited[nkey] or nc < visited[nkey] then
-                        visited[nkey] = nc
-                        table.insert(queue, {x=nx, y=ny, cost=nc, parent=cur})
+                    local ng = cur.g + 1
+                    if not visited[nkey] or ng < visited[nkey] then
+                        visited[nkey] = ng
+                        table.insert(queue, {x=nx, y=ny, g=ng, f=ng+h(nx,ny), parent=cur})
                     end
                 end
             end
         end
-
         if not found then return nil end
         local path, node = {}, found
         while node.parent ~= nil do
@@ -150,89 +167,88 @@ return function(SubTab, Window, myToken)
     end
 
     -- ========================================
-    -- [4] MOVEMENT
+    -- [3] MOVEMENT (sama seperti AutoDF)
     -- ========================================
 
     local function moveTo(gx, gy)
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+        local Hitbox = getHitbox()
         if not Hitbox then return end
-        local wx = gx * GRID_SIZE
-        local wy = gy * GRID_SIZE + OFFSET_Y
+        local wx, wy = worldPos(gx, gy)
         Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
         movementModule.Position = Hitbox.Position
         pcall(function() MovPacket:FireServer(wx, wy) end)
     end
 
-    local function snapToGrid()
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
+    local function walkTo(gx, gy, StatusLabel, label)
+        local Hitbox = getHitbox()
         if not Hitbox then return end
-        local snappedX = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5) * GRID_SIZE
-        local snappedY = math.floor(Hitbox.Position.Y / GRID_SIZE + 0.5) * GRID_SIZE + OFFSET_Y
-        Hitbox.CFrame = CFrame.new(snappedX, snappedY, Hitbox.Position.Z)
-        movementModule.Position = Hitbox.Position
-        pcall(function() MovPacket:FireServer(snappedX, snappedY) end)
-    end
-
-    local function walkToGrid(gx, gy, StatusLabel)
-        local Hitbox = workspace:FindFirstChild("Hitbox") and workspace.Hitbox:FindFirstChild(LP.Name)
-        if not Hitbox then return end
-
-        local sx = math.floor(Hitbox.Position.X / GRID_SIZE + 0.5)
-        local sy = math.floor((Hitbox.Position.Y - OFFSET_Y) / GRID_SIZE + 0.5)
+        local sx, sy = getGridPos()
         if sx == gx and sy == gy then return end
 
-        -- Kalau target tidak walkable, cari tile kosong terdekat di sekitarnya
-        local tgx, tgy = gx, gy
-        if not isWalkable(gx, gy) then
-            local found = false
-            for radius = 1, 3 do
-                for dy = -radius, radius do
-                    for dx = -radius, radius do
-                        if isWalkable(gx + dx, gy + dy) then
-                            tgx, tgy = gx + dx, gy + dy
-                            found = true
-                            break
-                        end
-                    end
-                    if found then break end
-                end
-                if found then break end
-            end
-            if not found then
+        local maxRetry = 5
+        local retry = 0
+
+        while retry < maxRetry do
+            if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
+            sx, sy = getGridPos()
+            if sx == gx and sy == gy then break end
+
+            local path = findSmartPath(sx, sy, gx, gy)
+            if not path then
                 moveTo(gx, gy)
                 task.wait(0.2)
-                return
+                break
             end
+
+            local stuck = false
+            for i, point in ipairs(path) do
+                if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
+                if StatusLabel then
+                    StatusLabel:SetText(string.format("Status  : %s (%d/%d)", label or "Jalan", i, #path))
+                end
+                local px = math.floor(point.X / GRID_SIZE + 0.5)
+                local py = math.floor(point.Y / GRID_SIZE + 0.5)
+                moveTo(px, py)
+                task.wait(getgenv().AutoClear_StepDelay)
+
+                -- Cek apakah server nolak (posisi tidak berubah setelah move)
+                local cx, cy = getGridPos()
+                if cx ~= px or cy ~= py then
+                    task.wait(0.15)
+                    stuck = true
+                    break
+                end
+            end
+
+            if not stuck then break end
+            retry = retry + 1
         end
 
-        local path = findSmartPath(sx, sy, tgx, tgy)
-        if not path then
-            moveTo(tgx, tgy)
+        if not isAtPosition(gx, gy) then
+            moveTo(gx, gy)
             task.wait(0.2)
-            return
-        end
-
-        for i, point in ipairs(path) do
-            if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
-            if StatusLabel then
-                StatusLabel:SetText(string.format("Status  : Jalan (%d/%d)...", i, #path))
-            end
-            local px = math.floor(point.X / GRID_SIZE + 0.5)
-            local py = math.floor(point.Y / GRID_SIZE + 0.5)
-            moveTo(px, py)
-            task.wait(getgenv().AutoClear_StepDelay)
-        end
-
-        if not isAtPosition(tgx, tgy) then
-            moveTo(tgx, tgy)
-            task.wait(0.15)
         end
     end
 
-    local function breakTile(gx, gy)
+    local function snapToGrid()
+        local Hitbox = getHitbox()
+        if not Hitbox then return end
+        local sx, sy = getGridPos()
+        local wx, wy = worldPos(sx, sy)
+        Hitbox.CFrame = CFrame.new(wx, wy, Hitbox.Position.Z)
+        movementModule.Position = Hitbox.Position
+        pcall(function() MovPacket:FireServer(wx, wy) end)
+    end
+
+    -- ========================================
+    -- [4] BREAK (foreground + background)
+    -- ========================================
+
+    local function breakTile(gx, gy, StatusLabel)
         if isLockArea(gx, gy) then return end
         local pos = Vector2.new(gx, gy)
 
+        -- Break foreground
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
             local tile   = worldData[gx] and worldData[gx][gy]
             local layer1 = tile and tile[1]
@@ -240,7 +256,7 @@ return function(SubTab, Window, myToken)
             local itemName = (type(layer1) == "table") and layer1[1] or layer1
             if shouldSkip(itemName) then break end
             if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy+1) * GRID_SIZE + OFFSET_Y) end)
+                pcall(function() MovPacket:FireServer(worldPos(gx, gy + 1)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
@@ -249,6 +265,7 @@ return function(SubTab, Window, myToken)
             end
         end
 
+        -- Break background
         while _G.LatestRunToken == myToken and getgenv().AutoClear_Enabled do
             local tile   = worldData[gx] and worldData[gx][gy]
             local layer2 = tile and tile[2]
@@ -256,7 +273,7 @@ return function(SubTab, Window, myToken)
             local itemName = (type(layer2) == "table") and layer2[1] or layer2
             if shouldSkip(itemName) then break end
             if isAtPosition(gx, gy + 1) then
-                pcall(function() MovPacket:FireServer(gx * GRID_SIZE, (gy+1) * GRID_SIZE + OFFSET_Y) end)
+                pcall(function() MovPacket:FireServer(worldPos(gx, gy + 1)) end)
                 PlayerFist:FireServer(pos)
                 task.wait(getgenv().AutoClear_BreakDelay)
             else
@@ -287,10 +304,11 @@ return function(SubTab, Window, myToken)
     local ProgressLabel = SubTab:AddLabel("Progress: -")
 
     SubTab:AddSection("PANDUAN")
+    SubTab:AddParagraph("Versi", "AutoClear v2 - 04 Mar 2026\n- A* pathfinding, limit 10000\n- walkTo retry kalau server kepental\n- Skip: lock, door, bedrock, wooden_frame\n- Break foreground + background")
     SubTab:AddLabel("1. Aktifkan Enable Auto Clear.")
     SubTab:AddLabel("2. Bot detect posisi atas world otomatis.")
     SubTab:AddLabel("3. Arah zig-zag kiri-kanan turun.")
-    SubTab:AddLabel("4. Skip: bedrock, lock, door, lock area.")
+    SubTab:AddLabel("4. Skip: bedrock, lock, door, lock area, wooden_frame.")
     SubTab:AddLabel("5. Matikan toggle untuk stop.")
 
     -- ========================================
@@ -337,10 +355,10 @@ return function(SubTab, Window, myToken)
                             if not getgenv().AutoClear_Enabled or _G.LatestRunToken ~= myToken then break end
 
                             local hasBlock, hasBg = getTileLayers(gx, gy)
-                            if (hasBlock or hasBg) and not isLockArea(gx, gy) then
-                                walkToGrid(gx, gy + 1, StatusLabel)
+                            if (hasBlock or hasBg) and canAccess(gx, gy) then
+                                walkTo(gx, gy + 1, StatusLabel, "Break")
                                 StatusLabel:SetText(string.format("Status  : Breaking (%d,%d)...", gx, gy))
-                                breakTile(gx, gy)
+                                breakTile(gx, gy, StatusLabel)
                             end
 
                             doneCount = doneCount + 1
