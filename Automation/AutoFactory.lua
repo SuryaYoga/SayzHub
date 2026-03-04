@@ -24,6 +24,8 @@ return function(SubTab, Window, myToken)
         HarvestDelay = 30,   -- detik tunggu sebelum harvest
         ScanningS   = false, -- scanning seed
         ScanningB   = false, -- scanning block
+        PlantedTime = nil,   -- tick() saat selesai tanam
+        PlantedXs   = {},    -- posisi yang ditanam
     }
 
     local DropSettings = {
@@ -141,7 +143,7 @@ return function(SubTab, Window, myToken)
     local StepLabel   = SubTab:AddLabel("Fase: -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "AutoFactory v2 - 04 Mar 2026\n- Plant: tunggu worldData konfirmasi sebelum pindah tile\n- Harvest: scan ulang Y, kanan→kiri menuju PnB\n- Collect dihapus: drop ke-collect otomatis saat jalan ke PnB\n- Auto Drop opsional")
+    SubTab:AddParagraph("Versi", "AutoFactory v5 - 04 Mar 2026\n- Fix harvest: simpan PlantedTime, harvest hanya setelah delay terpenuhi\n- Countdown real-time di label saat menunggu\n- Loop fleksibel: sapling→harvest, block→PnB, seed→tanam")
     SubTab:AddLabel("1. Berdiri di baris Y yang mau di-farm.")
     SubTab:AddLabel("2. Aktifkan Master → Y otomatis tersimpan.")
     SubTab:AddLabel("3. Scan ID Seed dan ID Block PnB.")
@@ -517,54 +519,91 @@ return function(SubTab, Window, myToken)
         StatusLabel:SetText("Status: Collect selesai")
     end
 
-    -- FASE 5: PnB di x=0, baris rowY (break lalu place)
+    -- FASE 5: PnB di x=0, baris rowY
+    -- Fleksibel: cek kondisi x=0 tiap iterasi
+    -- Kalau ada block = break, kalau kosong = place
+    -- Pastikan selalu di x=1 sebelum tiap aksi, kalau rubberband balik ke x=1 dulu
     local function doPnB(rowY)
-        StepLabel:SetText("Fase: PnB x=0")
         if not Factory.BlockID then
             Window:Notify("Block ID belum di-scan!", 3, "danger")
             return
         end
 
-        -- Jalan ke x=1 dulu (untuk akses x=0)
-        walkTo(1, rowY, StatusLabel, "Ke x=1")
-        if _G.LatestRunToken ~= myToken or not Factory.Enabled then return end
-
         local pnbPos = Vector2.new(0, rowY)
 
-        -- BREAK x=0 sampai kosong
-        StatusLabel:SetText("Status: Break x=0...")
-        local breakLimit = 50
-        local breakCount = 0
-        while breakCount < breakLimit do
-            if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-            local tile = worldData[0] and worldData[0][rowY]
-            if not (tile and tile[1]) then break end
-            PlayerFist:FireServer(pnbPos)
-            task.wait(0.035)
-            breakCount = breakCount + 1
-        end
-
-        -- Collect drop di x=0 setelah break
-        doCollect(rowY)
-
-        -- PLACE x=0
-        StatusLabel:SetText("Status: Place x=0...")
-        local placeLimit = 30
-        local placeCount = 0
-        while placeCount < placeLimit do
-            if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-            local tile = worldData[0] and worldData[0][rowY]
-            if tile and tile[1] then break end -- sudah terisi
-            local slotIdx, amt = getSlotByID(Factory.BlockID)
-            if not slotIdx or amt <= 0 then
-                StatusLabel:SetText("Status: Block habis!")
-                break
+        -- Pastikan di x=1, retry kalau rubberband
+        local function ensureAtX1()
+            for _ = 1, 5 do
+                local cx, cy = getGridPos()
+                if cx == 1 and cy == rowY then return true end
+                walkTo(1, rowY, StatusLabel, "Ke x=1")
+                task.wait(0.15)
             end
-            PlayerPlace:FireServer(pnbPos, slotIdx, 1)
-            task.wait(0.12)
-            placeCount = placeCount + 1
+            return false
         end
 
+        local cycleLimit = 300
+        local cycle = 0
+        while cycle < cycleLimit do
+            if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
+
+            -- Pastikan di x=1 dulu sebelum aksi apapun
+            if not ensureAtX1() then break end
+
+            local tile = worldData[0] and worldData[0][rowY]
+            local hasFg = tile and tile[1] ~= nil
+
+            if hasFg then
+                -- Ada block → BREAK
+                StepLabel:SetText("Fase: PnB [Break x=0]")
+                StatusLabel:SetText("Status: Break x=0...")
+                PlayerFist:FireServer(pnbPos)
+                task.wait(0.035)
+
+                -- Collect drop kecil di dekat x=0
+                local hb = getHitbox()
+                if hb then
+                    local container = workspace:FindFirstChild("Drops")
+                    if container then
+                        for _, item in pairs(container:GetChildren()) do
+                            local itPos = item:GetPivot().Position
+                            local itX = math.floor(itPos.X / 4.5 + 0.5)
+                            local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                            if itY == rowY and itX >= 0 and itX <= 2 then
+                                hb.CFrame = CFrame.new(itX*4.5, itY*4.5, hb.Position.Z)
+                                movementModule.Position = hb.Position
+                                task.wait(0.05)
+                            end
+                        end
+                    end
+                end
+            else
+                -- Kosong → PLACE
+                StepLabel:SetText("Fase: PnB [Place x=0]")
+                StatusLabel:SetText("Status: Place x=0...")
+                local slotIdx, amt = getSlotByID(Factory.BlockID)
+                if not slotIdx or amt <= 0 then
+                    StatusLabel:SetText("Status: Block habis!")
+                    break
+                end
+                PlayerPlace:FireServer(pnbPos, slotIdx, 1)
+
+                -- Tunggu konfirmasi place (max 1.5 detik)
+                local placed = false
+                for _ = 1, 15 do
+                    task.wait(0.1)
+                    local t = worldData[0] and worldData[0][rowY]
+                    if t and t[1] then placed = true break end
+                end
+
+                -- Kalau tidak ter-place = selesai (tidak ada block lagi)
+                if not placed then break end
+            end
+
+            cycle = cycle + 1
+        end
+
+        StepLabel:SetText("Fase: PnB selesai")
         StatusLabel:SetText("Status: PnB selesai")
     end
 
@@ -665,31 +704,81 @@ return function(SubTab, Window, myToken)
 
                     local rowY = Factory.RowY
 
-                    -- FASE 1: PLANT
-                    local planted = doPlant(rowY)
-                    if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
-                    if #planted == 0 then
-                        task.wait(2)
+                    -- Scan tile di rowY: ada sapling yang perlu di-harvest?
+                    local function scanSaplingsInRow()
+                        local found = {}
+                        local plantableXs = scanPlantableX(rowY)
+                        -- Scan semua x yang bisa ditanam + cek tile rowY ada sapling
+                        for gx = WORLD_MIN_X+2, WORLD_MAX_X-2 do
+                            local tile = worldData[gx] and worldData[gx][rowY]
+                            local fg = tile and tile[1]
+                            local name = fg and (type(fg)=="table" and fg[1] or fg) or nil
+                            if name then
+                                local n = string.lower(tostring(name))
+                                if string.find(n, "sapling") or string.find(n, "crop") or string.find(n, "seed") then
+                                    table.insert(found, gx)
+                                end
+                            end
+                        end
+                        return found
+                    end
+
+                    -- CEK 1: Ada sapling di baris + sudah lewat delay? → Harvest
+                    local saplings = scanSaplingsInRow()
+                    if #saplings > 0 then
+                        local now = tick()
+                        local plantedTime = Factory.PlantedTime or (now - Factory.HarvestDelay)
+                        local elapsed = now - plantedTime
+                        local remaining = Factory.HarvestDelay - elapsed
+
+                        if remaining > 0 then
+                            -- Belum waktunya, tampilkan countdown
+                            StepLabel:SetText("Fase: Menunggu Harvest")
+                            StatusLabel:SetText(string.format("Status: Tunggu %ds lagi...", math.ceil(remaining)))
+                            task.wait(1)
+                            return
+                        end
+
+                        -- Sudah waktunya harvest
+                        StepLabel:SetText("Fase: Harvest")
+                        StatusLabel:SetText(string.format("Status: Harvest %d sapling...", #saplings))
+                        table.sort(saplings, function(a,b) return a > b end)
+                        doHarvest(rowY, saplings)
+                        Factory.PlantedTime = nil
+                        Factory.PlantedXs = {}
+                        if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
+                        doAutoDrop(rowY)
                         return
                     end
 
-                    -- FASE 2: TUNGGU
-                    local ok = doWait(Factory.HarvestDelay)
-                    if not ok or not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
+                    -- CEK 2: Ada block di inventory? → PnB di x=0
+                    local blockSlot, blockAmt = getSlotByID(Factory.BlockID)
+                    if blockSlot and blockAmt > 0 then
+                        StepLabel:SetText("Fase: PnB")
+                        doPnB(rowY)
+                        if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
+                        doAutoDrop(rowY)
+                        return
+                    end
 
-                    -- FASE 3: HARVEST
-                    doHarvest(rowY, planted)
-                    if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
+                    -- CEK 3: Ada seed di inventory? → Tanam dulu
+                    local seedSlot, seedAmt = getSlotByID(Factory.SeedID)
+                    if seedSlot and seedAmt > 0 then
+                        StepLabel:SetText("Fase: Plant")
+                        local planted = doPlant(rowY)
+                        if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
+                        if #planted > 0 then
+                            -- Simpan waktu tanam untuk countdown harvest
+                            Factory.PlantedTime = tick()
+                            Factory.PlantedXs = planted
+                        end
+                        return
+                    end
 
-                    -- FASE 4: PnB di x=0
-                    doPnB(rowY)
-                    if not Factory.Enabled or _G.LatestRunToken ~= myToken then return end
-
-                    -- FASE 5: AUTO DROP
-                    doAutoDrop(rowY)
-
-                    StatusLabel:SetText("Status: Siklus selesai, ulang...")
-                    task.wait(0.5)
+                    -- CEK 4: Seed kosong dan block kosong → notif, tetap loop
+                    StepLabel:SetText("Fase: Menunggu")
+                    StatusLabel:SetText("Status: Seed kosong! Isi seed dulu...")
+                    task.wait(3)
                 end)
             end
         end
