@@ -26,6 +26,7 @@ return function(SubTab, Window, myToken)
         ScanningB   = false, -- scanning block
         PlantedTime = nil,   -- tick() saat selesai tanam
         PlantedXs   = {},    -- posisi yang ditanam
+        FirstStart  = true,  -- flag pertama kali start
     }
 
     local DropSettings = {
@@ -48,6 +49,7 @@ return function(SubTab, Window, myToken)
     getgenv().SayzUI_Handles["Factory_Master"] = SubTab:AddToggle("Master Switch", false, function(t)
         Factory.Enabled = t
         if t then
+            Factory.FirstStart = true  -- reset setiap kali diaktifkan
             local HitboxFolder = workspace:FindFirstChild("Hitbox")
             local MyHitbox = HitboxFolder and HitboxFolder:FindFirstChild(LP.Name)
             local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -98,6 +100,14 @@ return function(SubTab, Window, myToken)
         if val and val > 0 then Factory.HarvestDelay = val end
     end)
     SubTab:AddLabel("Tips: 1 menit = 60, 1 jam = 3600")
+    SubTab:AddButton("🌾 Harvest Sekarang (Skip Delay)", function()
+        if Factory.PlantedTime then
+            Factory.PlantedTime = tick() - Factory.HarvestDelay
+            Window:Notify("Harvest akan dimulai di iterasi berikutnya!", 2, "ok")
+        else
+            Window:Notify("Tidak ada tanaman yang sedang ditunggu.", 2, "warn")
+        end
+    end)
 
     SubTab:AddSection("AUTO DROP")
     getgenv().SayzUI_Handles["Factory_Drop"] = SubTab:AddToggle("Enable Auto Drop", false, function(t)
@@ -143,7 +153,7 @@ return function(SubTab, Window, myToken)
     local StepLabel   = SubTab:AddLabel("Fase: -")
 
     SubTab:AddSection("PANDUAN")
-    SubTab:AddParagraph("Versi", "AutoFactory v5 - 04 Mar 2026\n- Fix harvest: simpan PlantedTime, harvest hanya setelah delay terpenuhi\n- Countdown real-time di label saat menunggu\n- Loop fleksibel: sapling→harvest, block→PnB, seed→tanam")
+    SubTab:AddParagraph("Versi", "AutoFactory v6 - 04 Mar 2026\n- Fix first start: kalau ada sapling saat pertama start, tunggu delay dulu\n- Tombol Harvest Sekarang untuk skip delay\n- Countdown real-time\n- Loop fleksibel")
     SubTab:AddLabel("1. Berdiri di baris Y yang mau di-farm.")
     SubTab:AddLabel("2. Aktifkan Master → Y otomatis tersimpan.")
     SubTab:AddLabel("3. Scan ID Seed dan ID Block PnB.")
@@ -726,13 +736,27 @@ return function(SubTab, Window, myToken)
                     -- CEK 1: Ada sapling di baris + sudah lewat delay? → Harvest
                     local saplings = scanSaplingsInRow()
                     if #saplings > 0 then
+                        -- Pertama kali start dan PlantedTime belum diset
+                        -- Tanya user mau harvest sekarang atau tunggu delay dulu
+                        if Factory.FirstStart and not Factory.PlantedTime then
+                            StepLabel:SetText("Fase: Menunggu konfirmasi")
+                            StatusLabel:SetText("Status: Ada sapling! Harvest sekarang atau tunggu delay?")
+                            Window:Notify("Ada sapling di baris! Pilih: harvest sekarang (klik Harvest Sekarang) atau tunggu delay.", 5, "warn")
+                            -- Set PlantedTime = sekarang - HarvestDelay supaya langsung harvest
+                            -- User bisa klik tombol "Harvest Sekarang" atau biarkan tunggu delay
+                            Factory.PlantedTime = tick() -- tunggu delay dari sekarang
+                            Factory.FirstStart = false
+                            task.wait(1)
+                            return
+                        end
+                        Factory.FirstStart = false
+
                         local now = tick()
                         local plantedTime = Factory.PlantedTime or (now - Factory.HarvestDelay)
                         local elapsed = now - plantedTime
                         local remaining = Factory.HarvestDelay - elapsed
 
                         if remaining > 0 then
-                            -- Belum waktunya, tampilkan countdown
                             StepLabel:SetText("Fase: Menunggu Harvest")
                             StatusLabel:SetText(string.format("Status: Tunggu %ds lagi...", math.ceil(remaining)))
                             task.wait(1)
@@ -750,6 +774,7 @@ return function(SubTab, Window, myToken)
                         doAutoDrop(rowY)
                         return
                     end
+                    Factory.FirstStart = false
 
                     -- CEK 2: Ada block di inventory? → PnB di x=0
                     local blockSlot, blockAmt = getSlotByID(Factory.BlockID)
