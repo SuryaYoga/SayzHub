@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v11 - 04 Mar 2026\n- Fix WalkToDropPoint: retry sampai benar-benar sampai\n- Deteksi drop point tertutup semua sisi → drop acak + notif\n- Fix freeze & grid geser\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v12 - 04 Mar 2026\n- Fix drop di posisi salah: WalkToDropPoint return posisi aktual\n- Cek tile drop point sendiri walkable + enclosed\n- Drop acak di dekat drop point (bukan PnB) kalau tertutup\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. [Opsional] Smart Collect: ambil item drop otomatis.")
     SubTab:AddLabel("   ⚠️ Wajib aktifkan Lock Position jika pakai Smart Collect!")
@@ -688,17 +688,19 @@ return function(SubTab, Window, myToken)
         return nil, nil
     end
 
+    -- Return: actualX, actualY = posisi drop yang benar-benar dipakai
     local function WalkToDropPoint(Hitbox, targetX, targetY)
-        -- Cek dulu apakah drop point tertutup semua sisi
-        if isEnclosed(targetX, targetY) then
-            -- Cari posisi terdekat yang bisa dicapai
+        local actualX, actualY = targetX, targetY
+
+        -- Cek tile drop point itu sendiri walkable tidak
+        if not isWalkableDrop(targetX, targetY) or isEnclosed(targetX, targetY) then
             local nx, ny = findNearestWalkableAround(targetX, targetY)
             if nx then
-                Window:Notify(string.format("⚠️ Drop Point tertutup! Drop acak di (%d,%d)", nx, ny), 4, "warn")
-                targetX, targetY = nx, ny
+                Window:Notify(string.format("⚠️ Drop Point tertutup! Drop di sekitar (%d,%d)", nx, ny), 4, "warn")
+                actualX, actualY = nx, ny
             else
                 Window:Notify("⚠️ Drop Point tidak bisa dicapai sama sekali!", 4, "danger")
-                return
+                return actualX, actualY
             end
         end
 
@@ -708,16 +710,15 @@ return function(SubTab, Window, myToken)
             if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then break end
             local curX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
             local curY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-            if curX == targetX and curY == targetY then break end
+            if curX == actualX and curY == actualY then break end
 
-            local path = findSmartPathDrop(curX, curY, targetX, targetY)
+            local path = findSmartPathDrop(curX, curY, actualX, actualY)
             if not path then
-                -- Path nil = target tidak bisa dicapai via pathfinding
-                -- Cari tile walkable terdekat lalu drop di sana
-                local nx, ny = findNearestWalkableAround(targetX, targetY)
-                if nx and (nx ~= targetX or ny ~= targetY) then
-                    Window:Notify(string.format("⚠️ Drop Point tidak bisa dicapai! Drop acak di (%d,%d)", nx, ny), 4, "warn")
-                    targetX, targetY = nx, ny
+                -- Path nil = cari tile terdekat dari drop point (bukan dari posisi bot)
+                local nx, ny = findNearestWalkableAround(actualX, actualY)
+                if nx and (nx ~= actualX or ny ~= actualY) then
+                    Window:Notify(string.format("⚠️ Path tidak ditemukan! Drop di sekitar (%d,%d)", nx, ny), 4, "warn")
+                    actualX, actualY = nx, ny
                     retry = 0
                 else
                     break
@@ -730,13 +731,14 @@ return function(SubTab, Window, myToken)
                     movementModule.Position = Hitbox.Position
                     task.wait(getgenv().StepDelay)
                 end
-                -- Cek setelah jalan apakah sudah sampai
                 local ax = math.floor(Hitbox.Position.X / 4.5 + 0.5)
                 local ay = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-                if ax == targetX and ay == targetY then break end
+                if ax == actualX and ay == actualY then break end
                 retry = retry + 1
             end
         end
+
+        return actualX, actualY
     end
 
     -- Tidak dipakai lagi tapi tetap ada untuk kompatibilitas
@@ -949,7 +951,11 @@ return function(SubTab, Window, myToken)
                             local dropReturnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
 
                             DropStatusLabel:SetText(string.format("Drop: Ke Drop Point (%d,%d)...", DropSettings.DropPoint.x, DropSettings.DropPoint.y))
-                            WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
+                            local actualDropX, actualDropY = WalkToDropPoint(Hitbox, DropSettings.DropPoint.x, DropSettings.DropPoint.y)
+                            -- Update dropReturnX/Y ke posisi aktual bot setelah WalkToDropPoint
+                            -- (bisa beda kalau drop point tertutup dan diganti ke tile terdekat)
+                            dropReturnX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                            dropReturnY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
