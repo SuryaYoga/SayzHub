@@ -553,7 +553,7 @@ return function(SubTab, Window, myToken)
         end
 
         -- Helper: collect semua drop di x=0-2 baris rowY sampai bersih
-        -- Collect drop di x=0-2 baris rowY, nearest first, sampai benar-benar bersih
+        -- Collect drop + gems di x=0 saja (tile break), nearest first, sampai bersih
         local function collectNearPnB()
             local hb = getHitbox()
             if not hb then return end
@@ -561,21 +561,23 @@ return function(SubTab, Window, myToken)
             local c = 0
             while c < maxCycles do
                 if _G.LatestRunToken ~= myToken or not Factory.Enabled then break end
-                -- Kumpulkan semua drop di area x=0-2
                 local drops = {}
-                local container = workspace:FindFirstChild("Drops")
-                if container then
-                    for _, item in pairs(container:GetChildren()) do
-                        local itPos = item:GetPivot().Position
-                        local itX = math.floor(itPos.X / 4.5 + 0.5)
-                        local itY = math.floor(itPos.Y / 4.5 + 0.5)
-                        if itY == rowY and itX >= 0 and itX <= 2 then
-                            table.insert(drops, {item=item, x=itX, y=itY})
+                -- Scan Drops dan Gems di x=0 baris rowY saja
+                for _, folderName in ipairs({"Drops", "Gems"}) do
+                    local container = workspace:FindFirstChild(folderName)
+                    if container then
+                        for _, item in pairs(container:GetChildren()) do
+                            local itPos = item:GetPivot().Position
+                            local itX = math.floor(itPos.X / 4.5 + 0.5)
+                            local itY = math.floor(itPos.Y / 4.5 + 0.5)
+                            if itY == rowY and itX == 0 then
+                                table.insert(drops, {item=item, x=itX, y=itY})
+                            end
                         end
                     end
                 end
                 if #drops == 0 then break end
-                -- Ambil yang paling dekat
+                -- Nearest first
                 local nearest, nearestDist = nil, math.huge
                 for _, d in ipairs(drops) do
                     local dx = hb.Position.X - d.item:GetPivot().Position.X
