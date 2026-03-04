@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v7 - 04 Mar 2026\n- Fix isWalkableDrop: semua block solid, kecuali door/frame/sapling\n- Fix collect & drop: balik ke posisi sebelum jalan\n- Fix freeze: blacklist cache O(1)\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v8 - 04 Mar 2026\n- Fix berhenti tengah jalan: hapus lockedDoors marking dari stuck detection\n- Reset lockedDoors tiap siklus baru\n- Fix isWalkableDrop: semua block solid kecuali door/frame/sapling\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -518,16 +518,6 @@ return function(SubTab, Window, myToken)
             Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
             movementModule.Position = Hitbox.Position
             task.wait(getgenv().StepDelay)
-            local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-            if char then
-                local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                if dist > 5 then
-                    local px = math.floor(point.X / 4.5 + 0.5)
-                    local py = math.floor(point.Y / 4.5 + 0.5)
-                    lockedDoors[px .. "," .. py] = true
-                    return false
-                end
-            end
         end
         return true
     end
@@ -704,9 +694,6 @@ return function(SubTab, Window, myToken)
                 if char then
                     local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
                     if dist > 5 then
-                        local px = math.floor(point.X / 4.5 + 0.5)
-                        local py = math.floor(point.Y / 4.5 + 0.5)
-                        lockedDoors[px .. "," .. py] = true
                         stuck = true
                         break
                     end
@@ -807,6 +794,9 @@ return function(SubTab, Window, myToken)
 
                     local areaData, filledCount = getAreaInfo()
                     local maxTiles = #areaData
+
+                    -- Reset lockedDoors tiap siklus baru supaya path tidak makin sempit
+                    lockedDoors = {}
 
                     -- SIKLUS 1: BREAK
                     if PnB.Break and filledCount > 0 then
