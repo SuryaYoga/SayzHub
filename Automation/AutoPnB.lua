@@ -209,7 +209,7 @@ return function(SubTab, Window, myToken)
     local DropStatusLabel = SubTab:AddLabel("Drop Status: Idle")
 
     SubTab:AddSection("PANDUAN PENGGUNAAN")
-    SubTab:AddParagraph("Versi", "AutoPnB v8 - 04 Mar 2026\n- Fix berhenti tengah jalan: hapus lockedDoors marking dari stuck detection\n- Reset lockedDoors tiap siklus baru\n- Fix isWalkableDrop: semua block solid kecuali door/frame/sapling\n- A* parent pointer")
+    SubTab:AddParagraph("Versi", "AutoPnB v10 - 04 Mar 2026\n- Fix WalkToDropPoint: retry loop + fallback teleport\n- Fix walkback collect & drop: retry loop\n- Fix isWalkableDrop solid\n- A* parent pointer")
     SubTab:AddLabel("1. Aktifkan Master, Break, dan Place.")
     SubTab:AddLabel("2. Tambah Smart Collect untuk ambil item drop.")
     SubTab:AddLabel("3. Tambah Auto Drop untuk drop item otomatis.")
@@ -522,49 +522,36 @@ return function(SubTab, Window, myToken)
         return true
     end
 
-    -- Balik ke posisi x,y yang diberikan (bukan originGrid — tapi posisi player sebelum collect)
+    -- Balik ke posisi x,y, loop retry sampai benar-benar sampai
     local function walkBackToPos(Hitbox, targetX, targetY)
-        local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-        local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-        if sx == targetX and sy == targetY then return end
-
-        rebuildBlacklistCache()
-        local path = findSmartPath(sx, sy, targetX, targetY)
-
-        if not path then
-            -- Cari tile walkable terdekat di sekitar target
-            local found = false
-            for radius = 1, 3 do
-                for dy = -radius, radius do
-                    for dx = -radius, radius do
-                        local nx, ny = targetX + dx, targetY + dy
-                        local w, _ = isWalkable(nx, ny)
-                        if w then
-                            path = findSmartPath(sx, sy, nx, ny)
-                            if path then found = true break end
-                        end
-                    end
-                    if found then break end
-                end
-                if found then break end
-            end
-        end
-
-        if not path then
-            -- Fallback teleport
-            CollectStatusLabel:SetText("Collect: Teleport balik...")
-            Hitbox.CFrame = CFrame.new(targetX * 4.5, targetY * 4.5, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            task.wait(0.2)
-            return
-        end
-
-        for i, point in ipairs(path) do
+        local maxRetry = 5
+        local retry = 0
+        while retry < maxRetry do
             if _G.LatestRunToken ~= myToken or not PnB.Master then break end
-            CollectStatusLabel:SetText("Collect: Returning (" .. i .. "/" .. #path .. ")")
-            Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
-            movementModule.Position = Hitbox.Position
-            task.wait(getgenv().StepDelay)
+            local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+            local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+            if sx == targetX and sy == targetY then break end
+
+            rebuildBlacklistCache()
+            local path = findSmartPath(sx, sy, targetX, targetY)
+            if not path then
+                -- Fallback teleport
+                CollectStatusLabel:SetText("Collect: Teleport balik...")
+                Hitbox.CFrame = CFrame.new(targetX * 4.5, targetY * 4.5, Hitbox.Position.Z)
+                movementModule.Position = Hitbox.Position
+                task.wait(0.2)
+                break
+            end
+
+            for i, point in ipairs(path) do
+                if _G.LatestRunToken ~= myToken or not PnB.Master then break end
+                CollectStatusLabel:SetText(string.format("Collect: Returning (%d/%d)...", i, #path))
+                Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
+                movementModule.Position = Hitbox.Position
+                task.wait(getgenv().StepDelay)
+            end
+
+            retry = retry + 1
         end
     end
 
@@ -672,52 +659,35 @@ return function(SubTab, Window, myToken)
     end
 
     local function WalkToDropPoint(Hitbox, targetX, targetY)
-        local startZ = Hitbox.Position.Z
-        local maxRetry = 10
+        local maxRetry = 5
         local retry = 0
-        while _G.LatestRunToken == myToken and PnB.Master and getgenv().AutoDrop_PnB_Enabled do
+        while retry < maxRetry do
+            if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then break end
             local curX = math.floor(Hitbox.Position.X / 4.5 + 0.5)
             local curY = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
             if curX == targetX and curY == targetY then break end
-            retry = retry + 1
-            if retry > maxRetry then break end
             local path = findSmartPathDrop(curX, curY, targetX, targetY)
-            if not path then break end
-            local stuck = false
+            if not path then
+                -- Fallback teleport
+                DropStatusLabel:SetText("Drop: Teleport ke Drop Point...")
+                Hitbox.CFrame = CFrame.new(targetX * 4.5, targetY * 4.5, Hitbox.Position.Z)
+                movementModule.Position = Hitbox.Position
+                task.wait(0.2)
+                break
+            end
             for i, point in ipairs(path) do
-                if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then return end
+                if not PnB.Master or not getgenv().AutoDrop_PnB_Enabled or _G.LatestRunToken ~= myToken then break end
                 DropStatusLabel:SetText(string.format("Drop: Jalan ke Drop Point (%d/%d)...", i, #path))
-                Hitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
+                Hitbox.CFrame = CFrame.new(point.X, point.Y, Hitbox.Position.Z)
                 movementModule.Position = Hitbox.Position
                 task.wait(getgenv().StepDelay)
-                local char = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                if char then
-                    local dist = (Vector2.new(char.Position.X, char.Position.Y) - Vector2.new(point.X, point.Y)).Magnitude
-                    if dist > 5 then
-                        stuck = true
-                        break
-                    end
-                end
             end
-            if not stuck then break end
+            retry = retry + 1
         end
     end
 
-    local function WalkBackFromDrop(Hitbox, originGrid)
-        local startZ = Hitbox.Position.Z
-        local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-        local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-        local path = findSmartPathDrop(sx, sy, originGrid.x, originGrid.y)
-        if not path then return end
-        for i, point in ipairs(path) do
-            if _G.LatestRunToken ~= myToken or not PnB.Master then break end
-            DropStatusLabel:SetText(string.format("Drop: Balik ke Origin (%d/%d)...", i, #path))
-            Hitbox.CFrame = CFrame.new(point.X, point.Y, startZ)
-            movementModule.Position = Hitbox.Position
-            task.wait(getgenv().StepDelay)
-        end
-        DropStatusLabel:SetText("Drop Status: Idle")
-    end
+    -- Tidak dipakai lagi tapi tetap ada untuk kompatibilitas
+    local function WalkBackFromDrop(Hitbox, originGrid) end
 
     -- ========================================
     -- [6] GRAVITY BYPASS
@@ -935,12 +905,22 @@ return function(SubTab, Window, myToken)
 
                             if not PnB.Master or _G.LatestRunToken ~= myToken then return end
 
-                            -- Balik ke posisi sebelum drop, bukan baseGrid
-                            DropStatusLabel:SetText(string.format("Drop: Balik ke posisi awal (%d,%d)...", dropReturnX, dropReturnY))
-                            local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
-                            local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
-                            local path = findSmartPathDrop(sx, sy, dropReturnX, dropReturnY)
-                            if path then
+                            -- Balik ke posisi sebelum drop, retry sampai sampai
+                            local dropMaxRetry = 5
+                            local dropRetry = 0
+                            while dropRetry < dropMaxRetry do
+                                if _G.LatestRunToken ~= myToken or not PnB.Master then break end
+                                local sx = math.floor(Hitbox.Position.X / 4.5 + 0.5)
+                                local sy = math.floor(Hitbox.Position.Y / 4.5 + 0.5)
+                                if sx == dropReturnX and sy == dropReturnY then break end
+                                DropStatusLabel:SetText(string.format("Drop: Balik ke posisi awal (%d,%d)...", dropReturnX, dropReturnY))
+                                local path = findSmartPathDrop(sx, sy, dropReturnX, dropReturnY)
+                                if not path then
+                                    Hitbox.CFrame = CFrame.new(dropReturnX * 4.5, dropReturnY * 4.5, Hitbox.Position.Z)
+                                    movementModule.Position = Hitbox.Position
+                                    task.wait(0.2)
+                                    break
+                                end
                                 for i, point in ipairs(path) do
                                     if _G.LatestRunToken ~= myToken or not PnB.Master then break end
                                     DropStatusLabel:SetText(string.format("Drop: Balik (%d/%d)...", i, #path))
@@ -948,10 +928,7 @@ return function(SubTab, Window, myToken)
                                     movementModule.Position = Hitbox.Position
                                     task.wait(getgenv().StepDelay)
                                 end
-                            else
-                                Hitbox.CFrame = CFrame.new(dropReturnX * 4.5, dropReturnY * 4.5, Hitbox.Position.Z)
-                                movementModule.Position = Hitbox.Position
-                                task.wait(0.2)
+                                dropRetry = dropRetry + 1
                             end
                             DropStatusLabel:SetText("Drop Status: Idle")
                         else
