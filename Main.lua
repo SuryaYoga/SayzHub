@@ -2,29 +2,6 @@
 _G.LatestRunToken = (_G.LatestRunToken or 0) + 1
 local myToken = _G.LatestRunToken
 
--- Anti-AFK: simulasi tap tiap 10 menit, work di PC & Android
-local function InitAntiAFK()
-    local VirtualUser = game:GetService("VirtualUser")
-
-    if _G.AFKThread then
-        task.cancel(_G.AFKThread)
-        _G.AFKThread = nil
-    end
-
-    _G.AFKThread = task.spawn(function()
-        while _G.LatestRunToken == myToken do
-            task.wait(600)
-            if _G.LatestRunToken ~= myToken then break end
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton1(Vector2.new(0, 0), CFrame.new())
-                task.wait(0.1)
-            end)
-        end
-    end)
-end
-InitAntiAFK()
-
 -- [FIX-2] Reset OldHookSet setiap re-execute agar hook scanner terpasang ulang
 _G.OldHookSet = false
 _G.AutoDropHookSet = false
